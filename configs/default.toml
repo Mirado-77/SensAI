@@ -1,0 +1,15 @@
+# Default SENSAI configuration.
+# A file passed with --config only needs the keys to change.
+
+[model]
+# Ollama model. Provisional: to be decided with the team (size, speed, tool calling).
+name = "qwen3:4b"
+host = "http://localhost:11434"
+timeout_s = 120  # maximum time without a response from Ollama
+
+[runtime]
+# Limits of one AgentRuntime turn.
+max_steps = 8
+max_tool_calls = 8
+timeout_s = 300
+max_tokens = 32768  # cumulative tokens (prompt + completion) over one turn
