@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from sensai.core.config import DEFAULT_CONFIG_PATH, load_config
@@ -66,3 +68,18 @@ def test_invalid_configuration(overrides):
 
 def test_max_tool_calls_can_be_zero():
     assert load_config(overrides={"runtime": {"max_tool_calls": 0}}).runtime.max_tool_calls == 0
+
+
+def test_default_policy_asks_before_write_and_exec():
+    policy = load_config().policy
+    assert (policy.read, policy.write, policy.exec) == ("allow", "ask", "ask")
+
+
+def test_policy_rejects_an_unknown_decision():
+    with pytest.raises(ConfigError, match="invalide"):
+        load_config(overrides={"policy": {"read": "maybe"}})
+
+
+def test_storage_path_is_a_path():
+    config = load_config(overrides={"storage": {"db_path": "/tmp/sensai-test.db"}})
+    assert config.storage.db_path == Path("/tmp/sensai-test.db")

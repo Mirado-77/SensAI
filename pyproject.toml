@@ -14,8 +14,12 @@ dynamic = ["dependencies"]
 dev = [
     "pytest>=8",
     "pytest-asyncio>=0.24",
+    "respx>=0.21",
     "ruff>=0.6",
 ]
+
+[project.scripts]
+sensai = "sensai.cli.main:main"
 
 [tool.setuptools.dynamic]
 dependencies = { file = ["requirements.txt"] }
@@ -23,12 +27,16 @@ dependencies = { file = ["requirements.txt"] }
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+sensai = ["db/migrations/*.sql"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
 addopts = "--import-mode=importlib -m 'not integration'"
 markers = [
     "integration: requires Ollama or Docker (run with `pytest -m integration`)",
+    "feature(id): catalog feature covered by the test, for example B1",
 ]
 
 [tool.ruff]

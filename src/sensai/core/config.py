@@ -6,6 +6,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from sensai.core.errors import ConfigError
+from sensai.core.types import Decision
 
 try:
     import tomllib
@@ -32,9 +33,21 @@ class RuntimeConfig(_Section):
     max_tokens: int = Field(gt=0)
 
 
+class StorageConfig(_Section):
+    db_path: Path
+
+
+class PolicyConfig(_Section):
+    read: Decision
+    write: Decision
+    exec: Decision
+
+
 class Config(_Section):
     model: ModelConfig
     runtime: RuntimeConfig
+    storage: StorageConfig
+    policy: PolicyConfig
 
 
 def _read_toml(path: Path) -> dict[str, Any]:

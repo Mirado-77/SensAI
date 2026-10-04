@@ -3,7 +3,7 @@
 
 [model]
 # Ollama model. Provisional: to be decided with the team (size, speed, tool calling).
-name = "qwen3:4b"
+name = "phi4:latest"
 host = "http://localhost:11434"
 timeout_s = 120  # maximum time without a response from Ollama
 
@@ -13,3 +13,12 @@ max_steps = 8
 max_tool_calls = 8
 timeout_s = 300
 max_tokens = 32768  # cumulative tokens (prompt + completion) over one turn
+
+[storage]
+db_path = "~/.sensai/sensai.db"
+
+[policy]
+# Before a tool runs, by risk level: "allow", "ask" (user approval) or "deny".
+read = "allow"
+write = "ask"
+exec = "ask"

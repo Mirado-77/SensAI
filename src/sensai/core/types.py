@@ -7,6 +7,7 @@ from typing import Any, Literal
 Role = Literal["system", "user", "assistant", "tool"]
 MessageStatus = Literal["complete", "interrupted"]
 Risk = Literal["read", "write", "exec"]
+Decision = Literal["allow", "ask", "deny"]
 
 
 def new_id() -> str:
