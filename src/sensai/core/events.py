@@ -34,7 +34,6 @@ EVENT_TYPES = frozenset(
     }
 )
 
-# Reserved: already in the vocabulary, emitted only once the matching feature lands.
 QUESTION_REQUESTED = "question.requested"
 QUESTION_ANSWERED = "question.answered"
 MEMORY_COMPRESSED = "memory.compressed"

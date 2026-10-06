@@ -16,7 +16,7 @@ def test_message_defaults():
 def test_message_is_immutable():
     message = Message("user", "hello")
     with pytest.raises(dataclasses.FrozenInstanceError):
-        message.content = "other"  # type: ignore[misc]
+        message.content = "other"
 
 
 def test_tool_result_defaults():
