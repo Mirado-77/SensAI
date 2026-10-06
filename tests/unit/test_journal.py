@@ -8,7 +8,7 @@ from sensai.core.config import RuntimeConfig
 from sensai.core.errors import ModelConnectionError
 from sensai.core.events import MODEL_CHUNK, make_event
 from sensai.core.fakes import CollectingEventSink, FakeModelGateway, FakeTool, FakeUserChannel
-from sensai.core.runtime import AgentRuntime
+from sensai.core.runtime import AgentRuntime, RuntimeDeps
 from sensai.core.types import Chunk, ToolCall, ToolResult, Usage
 from sensai.db.connection import connect
 from sensai.memory.sqlite_store import SqliteSessionStore
@@ -32,16 +32,15 @@ def build(*scripts, tools=(), approvals=(), error=None) -> Setup:
     db = connect(":memory:")
     store = SqliteSessionStore(db)
     sink = CollectingEventSink()
-    runtime = AgentRuntime(
+    deps = RuntimeDeps(
         gateway=FakeModelGateway(*scripts, error=error),
         store=store,
         sink=EventBus([SqliteEventJournal(db), sink]),
         channel=FakeUserChannel(approvals=approvals),
         registry=ToolRegistry(tools),
         policy=ApprovalPolicy(RULES),
-        config=LIMITS,
-        model_name="test-model",
     )
+    runtime = AgentRuntime(deps, LIMITS, "test-model")
     return Setup(runtime, db, sink, store.create_session())
 
 

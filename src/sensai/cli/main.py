@@ -12,6 +12,7 @@ from rich.console import Console
 from rich.text import Text
 
 from sensai.cli.chat import run_chat
+from sensai.cli.terminal import Terminal
 from sensai.core.config import Config, load_config
 from sensai.core.errors import ConfigError
 
@@ -35,26 +36,29 @@ def config_from_args(args: argparse.Namespace) -> Config:
     return load_config(args.config, overrides)
 
 
-def _raise_keyboard_interrupt(signum: int, frame: FrameType | None) -> None:
-    raise KeyboardInterrupt
-
-
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    console = Console(highlight=False)
-    error_console = Console(stderr=True, highlight=False)
+    terminal = Terminal(Console(highlight=False), Console(stderr=True, highlight=False))
     try:
         config = config_from_args(args)
     except ConfigError as exc:
-        error_console.print(Text(f"Erreur : {exc}", style="bold red"))
+        terminal.errors.print(Text(f"Erreur : {exc}", style="bold red"))
         return 2
+    return _run(config, terminal)
+
+
+def _run(config: Config, terminal: Terminal) -> int:
     # asyncio.run installs its own SIGINT handler unless a custom one is set. That handler would
     # swallow Ctrl-C while input() is waiting at the prompt.
     previous_handler = signal.signal(signal.SIGINT, _raise_keyboard_interrupt)
     try:
-        return asyncio.run(run_chat(config, console, error_console))
+        return asyncio.run(run_chat(config, terminal))
     except KeyboardInterrupt:
-        console.print()
+        terminal.console.print()
         return 130
     finally:
         signal.signal(signal.SIGINT, previous_handler)
+
+
+def _raise_keyboard_interrupt(signum: int, frame: FrameType | None) -> None:
+    raise KeyboardInterrupt

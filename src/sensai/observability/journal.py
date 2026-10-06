@@ -29,6 +29,19 @@ _RUN_END_STATUS = {RUN_COMPLETED: "completed", RUN_CANCELLED: "cancelled", RUN_F
 class SqliteEventJournal:
     def __init__(self, connection: sqlite3.Connection) -> None:
         self._db = connection
+        self._handlers = {
+            RUN_STARTED: self._run_started,
+            MODEL_USAGE: self._add_usage,
+            RUN_COMPLETED: self._run_ended,
+            RUN_CANCELLED: self._run_ended,
+            RUN_FAILED: self._run_ended,
+            MODEL_TOOL_CALL: self._tool_requested,
+            APPROVAL_REQUESTED: self._approval_requested,
+            APPROVAL_RESOLVED: self._approval_resolved,
+            TOOL_STARTED: self._tool_started,
+            TOOL_FINISHED: self._tool_finished,
+            TOOL_FAILED: self._tool_failed,
+        }
 
     def emit(self, event: Event) -> None:
         with self._db:
@@ -36,60 +49,73 @@ class SqliteEventJournal:
                 "INSERT INTO events (run_id, ts, type, payload_json) VALUES (?, ?, ?, ?)",
                 (event.run_id, event.ts, event.type, _dumps(event.payload)),
             )
-            self._update_tables(event)
+            handler = self._handlers.get(event.type)
+            if handler is not None:
+                handler(event)
 
-    def _update_tables(self, event: Event) -> None:
+    def _run_started(self, event: Event) -> None:
+        self._db.execute(
+            "INSERT INTO runs (id, session_id, model, status, started_at)"
+            " VALUES (?, ?, ?, 'running', ?)",
+            (event.run_id, event.payload["session_id"], event.payload.get("model"), event.ts),
+        )
+
+    def _add_usage(self, event: Event) -> None:
+        self._db.execute(
+            "UPDATE runs SET prompt_tokens = prompt_tokens + ?,"
+            " completion_tokens = completion_tokens + ? WHERE id = ?",
+            (event.payload["prompt_tokens"], event.payload["completion_tokens"], event.run_id),
+        )
+
+    def _run_ended(self, event: Event) -> None:
+        self._db.execute(
+            "UPDATE runs SET status = ?, ended_at = ? WHERE id = ?",
+            (_RUN_END_STATUS[event.type], event.ts, event.run_id),
+        )
+
+    def _tool_requested(self, event: Event) -> None:
+        self._db.execute(
+            "INSERT INTO tool_calls (id, run_id, tool, args_json, status)"
+            " VALUES (?, ?, ?, ?, 'requested')",
+            (
+                event.payload["call_id"],
+                event.run_id,
+                event.payload["name"],
+                _dumps(event.payload["args"]),
+            ),
+        )
+
+    def _approval_requested(self, event: Event) -> None:
+        self._update_tool_call(event, status="awaiting_approval", risk=event.payload["risk"])
+
+    def _approval_resolved(self, event: Event) -> None:
+        approved = bool(event.payload["approved"])
+        status = "approved" if approved else "refused"
+        self._update_tool_call(event, status=status, approved=int(approved))
+
+    def _tool_started(self, event: Event) -> None:
+        self._update_tool_call(event, status="running", risk=event.payload["risk"])
+
+    def _tool_finished(self, event: Event) -> None:
         payload = event.payload
-        call_id = payload.get("call_id")
-        if event.type == RUN_STARTED:
-            self._db.execute(
-                "INSERT INTO runs (id, session_id, model, status, started_at)"
-                " VALUES (?, ?, ?, 'running', ?)",
-                (event.run_id, payload["session_id"], payload.get("model"), event.ts),
-            )
-        elif event.type == MODEL_USAGE:
-            self._db.execute(
-                "UPDATE runs SET prompt_tokens = prompt_tokens + ?,"
-                " completion_tokens = completion_tokens + ? WHERE id = ?",
-                (payload["prompt_tokens"], payload["completion_tokens"], event.run_id),
-            )
-        elif event.type in _RUN_END_STATUS:
-            self._db.execute(
-                "UPDATE runs SET status = ?, ended_at = ? WHERE id = ?",
-                (_RUN_END_STATUS[event.type], event.ts, event.run_id),
-            )
-        elif event.type == MODEL_TOOL_CALL:
-            self._db.execute(
-                "INSERT INTO tool_calls (id, run_id, tool, args_json, status)"
-                " VALUES (?, ?, ?, ?, 'requested')",
-                (call_id, event.run_id, payload["name"], _dumps(payload["args"])),
-            )
-        elif event.type == APPROVAL_REQUESTED:
-            self._update_tool_call(call_id, status="awaiting_approval", risk=payload["risk"])
-        elif event.type == APPROVAL_RESOLVED:
-            approved = bool(payload["approved"])
-            status = "approved" if approved else "refused"
-            self._update_tool_call(call_id, status=status, approved=int(approved))
-        elif event.type == TOOL_STARTED:
-            self._update_tool_call(call_id, status="running", risk=payload["risk"])
-        elif event.type == TOOL_FINISHED:
-            result = {"content": payload["content"], "is_error": payload["is_error"]}
-            self._update_tool_call(
-                call_id,
-                status="error" if payload["is_error"] else "ok",
-                result_json=_dumps(result),
-                duration_ms=payload["duration_ms"],
-            )
-        elif event.type == TOOL_FAILED:
-            status = "denied" if payload["error"] == "denied" else "failed"
-            self._update_tool_call(
-                call_id, status=status, result_json=_dumps({"error": payload["error"]})
-            )
+        result = {"content": payload["content"], "is_error": payload["is_error"]}
+        self._update_tool_call(
+            event,
+            status="error" if payload["is_error"] else "ok",
+            result_json=_dumps(result),
+            duration_ms=payload["duration_ms"],
+        )
 
-    def _update_tool_call(self, call_id: str, **columns: object) -> None:
+    def _tool_failed(self, event: Event) -> None:
+        error = event.payload["error"]
+        status = "denied" if error == "denied" else "failed"
+        self._update_tool_call(event, status=status, result_json=_dumps({"error": error}))
+
+    def _update_tool_call(self, event: Event, **columns: object) -> None:
         assignments = ", ".join(f"{column} = ?" for column in columns)
         self._db.execute(
-            f"UPDATE tool_calls SET {assignments} WHERE id = ?", (*columns.values(), call_id)
+            f"UPDATE tool_calls SET {assignments} WHERE id = ?",
+            (*columns.values(), event.payload["call_id"]),
         )
 
 

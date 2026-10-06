@@ -13,7 +13,7 @@ from sensai.core.fakes import (
     FakeUserChannel,
     InMemorySessionStore,
 )
-from sensai.core.runtime import AgentRuntime
+from sensai.core.runtime import AgentRuntime, RuntimeDeps
 from sensai.core.types import Chunk, Done, ToolCall, ToolResult, ToolSpec, Usage
 from sensai.safety.policy import ApprovalPolicy
 from sensai.tools.registry import ToolRegistry
@@ -40,17 +40,16 @@ def build(
     store = InMemorySessionStore()
     sink = CollectingEventSink()
     channel = FakeUserChannel(approvals=approvals)
-    runtime = AgentRuntime(
+    deps = RuntimeDeps(
         gateway=gateway,
         store=store,
         sink=sink,
         channel=channel,
         registry=ToolRegistry(tools),
         policy=ApprovalPolicy({**RULES, **(rules or {})}),
-        config=RuntimeConfig(**{**LIMITS, **limits}),
-        model_name="test-model",
-        system_prompt=system_prompt,
     )
+    config = RuntimeConfig(**{**LIMITS, **limits})
+    runtime = AgentRuntime(deps, config, "test-model", system_prompt)
     return Setup(runtime, gateway, store, sink, channel, store.create_session())
 
 

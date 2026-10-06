@@ -1,27 +1,27 @@
-# <ID> <Feature name>
+# <ID> <Nom de la fonctionnalité>
 
-Each feature has at least two user stories. Acceptance criteria are observable behaviors: what
-a user sees or what a test can assert.
+Chaque fonctionnalité a au moins deux user stories. Les critères d'acceptation sont des
+comportements observables : ce qu'un utilisateur voit ou ce qu'un test peut vérifier.
 
 ## Story 1
 
-As a <type of user>, I want to <action>, so that <outcome>.
+En tant que <type d'utilisateur>, je veux <action>, afin de <résultat>.
 
-Acceptance criteria:
-- <Observable behavior 1>
-- <Observable behavior 2>
-- <Observable behavior 3>
+Critères d'acceptation :
+- <Comportement observable 1>
+- <Comportement observable 2>
+- <Comportement observable 3>
 
 ## Story 2
 
-As a <type of user>, I want to <action>, so that <outcome>.
+En tant que <type d'utilisateur>, je veux <action>, afin de <résultat>.
 
-Acceptance criteria:
-- <Observable behavior 1>
-- <Observable behavior 2>
+Critères d'acceptation :
+- <Comportement observable 1>
+- <Comportement observable 2>
 
 ## Tests
 
-Tests carry the feature ID with `@pytest.mark.feature("<ID>")`.
+Les tests portent l'ID de la fonctionnalité avec `@pytest.mark.feature("<ID>")`.
 
-- `tests/<path>::<test name>`
+- `tests/<chemin>::<nom du test>`

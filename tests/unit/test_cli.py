@@ -12,6 +12,7 @@ from sensai.cli.channel import CliUserChannel
 from sensai.cli.chat import run_chat, run_interruptible
 from sensai.cli.main import build_parser, config_from_args, main
 from sensai.cli.render import ConsoleRenderer
+from sensai.cli.terminal import Terminal
 from sensai.core.config import load_config
 from sensai.core.errors import ModelConnectionError
 from sensai.core.events import (
@@ -37,18 +38,18 @@ from sensai.memory.sqlite_store import SqliteSessionStore
 pytestmark = pytest.mark.feature("B1")
 
 
-def make_console():
-    buffer = io.StringIO()
-    console = Console(
-        file=buffer, width=100, color_system=None, force_terminal=False, highlight=False
-    )
-    return console, buffer
+def make_console(buffer):
+    return Console(file=buffer, width=100, color_system=None, force_terminal=False, highlight=False)
+
+
+def make_terminal(read_line=input):
+    out, err = io.StringIO(), io.StringIO()
+    return Terminal(make_console(out), make_console(err), read_line), out, err
 
 
 def render(events):
-    console, out = make_console()
-    errors, err = make_console()
-    renderer = ConsoleRenderer(console, errors)
+    terminal, out, err = make_terminal()
+    renderer = ConsoleRenderer(terminal)
     for type_, payload in events:
         renderer.emit(make_event(type_, "r1", payload))
     return out.getvalue(), err.getvalue()
@@ -182,41 +183,39 @@ REQUEST = ApprovalRequest("r1", "write_file", "write", 'write_file({"path": "a.p
 
 @pytest.mark.parametrize("answer", ["y", "Y", "yes", " YES "])
 async def test_confirm_accepts_a_yes(answer):
-    console, _ = make_console()
-    assert await CliUserChannel(console, lambda prompt: answer).confirm(REQUEST) is True
+    terminal, _, _ = make_terminal(lambda prompt: answer)
+    assert await CliUserChannel(terminal).confirm(REQUEST) is True
 
 
 @pytest.mark.parametrize("answer", ["", "n", "no", "maybe"])
 async def test_confirm_refuses_anything_else(answer):
-    console, _ = make_console()
-    assert await CliUserChannel(console, lambda prompt: answer).confirm(REQUEST) is False
+    terminal, _, _ = make_terminal(lambda prompt: answer)
+    assert await CliUserChannel(terminal).confirm(REQUEST) is False
 
 
 async def test_confirm_refuses_at_end_of_input_and_shows_the_preview():
-    console, out = make_console()
-    assert await CliUserChannel(console, scripted()).confirm(REQUEST) is False
+    terminal, out, _ = make_terminal(scripted())
+    assert await CliUserChannel(terminal).confirm(REQUEST) is False
     assert out.getvalue() == 'Approval required (write): write_file({"path": "a.py"})\n'
 
 
 async def test_ask_is_not_supported_yet():
-    console, _ = make_console()
+    terminal, _, _ = make_terminal()
     with pytest.raises(NotImplementedError):
-        await CliUserChannel(console).ask({"question": "?"})
+        await CliUserChannel(terminal).ask({"question": "?"})
 
 
-def chat_setup(tmp_path, **overrides):
+def chat_setup(tmp_path, *lines, **overrides):
     storage = {"db_path": str(tmp_path / "sensai.db")}
     config = load_config(overrides={"storage": storage, **overrides})
-    console, out = make_console()
-    errors, err = make_console()
-    return config, console, out, errors, err
+    terminal, out, err = make_terminal(scripted(*lines))
+    return config, terminal, out, err
 
 
 async def test_each_line_is_a_turn_and_empty_lines_are_ignored(tmp_path):
-    config, console, out, errors, err = chat_setup(tmp_path)
+    config, terminal, out, err = chat_setup(tmp_path, "hello", "", "   ", "again", "/exit")
     gateway = FakeModelGateway([Chunk("one")], [Chunk("two")])
-    lines = scripted("hello", "", "   ", "again", "/exit")
-    assert await run_chat(config, console, errors, gateway=gateway, read_line=lines) == 0
+    assert await run_chat(config, terminal, gateway) == 0
 
     assert len(gateway.calls) == 2
     assert "sensai> one\n" in out.getvalue()
@@ -227,36 +226,33 @@ async def test_each_line_is_a_turn_and_empty_lines_are_ignored(tmp_path):
 
 
 async def test_the_banner_shows_the_model(tmp_path):
-    config, console, out, errors, _ = chat_setup(tmp_path, model={"name": "llama3.2:3b"})
-    await run_chat(config, console, errors, gateway=FakeModelGateway(), read_line=scripted())
+    config, terminal, out, _ = chat_setup(tmp_path, model={"name": "llama3.2:3b"})
+    await run_chat(config, terminal, FakeModelGateway())
     assert "model: llama3.2:3b" in out.getvalue()
 
 
 @pytest.mark.parametrize("ending", [["/exit"], ["/quit"], []])
 async def test_exit_command_and_end_of_input_stop_the_chat_cleanly(tmp_path, ending):
-    config, console, _, errors, _ = chat_setup(tmp_path)
+    config, terminal, _, _ = chat_setup(tmp_path, "hi", *ending)
     gateway = FakeModelGateway([Chunk("one")])
-    lines = scripted("hi", *ending)
-    code = await run_chat(config, console, errors, gateway=gateway, read_line=lines)
+    code = await run_chat(config, terminal, gateway)
     assert code == 0
     assert len(gateway.calls) == 1
 
 
 async def test_ctrl_c_at_the_prompt_stops_the_chat_cleanly(tmp_path):
-    config, console, _, errors, _ = chat_setup(tmp_path)
-
     def interrupt(prompt):
         raise KeyboardInterrupt
 
-    gateway = FakeModelGateway()
-    code = await run_chat(config, console, errors, gateway=gateway, read_line=interrupt)
-    assert code == 0
+    config, _, _, _ = chat_setup(tmp_path)
+    terminal, _, _ = make_terminal(interrupt)
+    assert await run_chat(config, terminal, FakeModelGateway()) == 0
 
 
 async def test_a_model_error_is_shown_and_the_chat_continues(tmp_path):
-    config, console, _, errors, err = chat_setup(tmp_path)
+    config, terminal, _, err = chat_setup(tmp_path, "a", "b")
     gateway = FakeModelGateway(error=ModelConnectionError("Ollama is down"))
-    code = await run_chat(config, console, errors, gateway=gateway, read_line=scripted("a", "b"))
+    code = await run_chat(config, terminal, gateway)
     assert code == 0
     assert len(gateway.calls) == 2
     assert err.getvalue().count("Erreur : Ollama is down") == 2
@@ -265,16 +261,17 @@ async def test_a_model_error_is_shown_and_the_chat_continues(tmp_path):
 async def test_an_unusable_database_ends_with_exit_code_2(tmp_path):
     blocker = tmp_path / "file"
     blocker.write_text("not a directory")
-    config, console, _, errors, err = chat_setup(tmp_path, storage={"db_path": str(blocker / "db")})
-    code = await run_chat(config, console, errors, gateway=FakeModelGateway(), read_line=scripted())
+    storage = {"db_path": str(blocker / "db")}
+    config, terminal, _, err = chat_setup(tmp_path, storage=storage)
+    code = await run_chat(config, terminal, FakeModelGateway())
     assert code == 2
     assert "base de données" in err.getvalue()
 
 
 async def test_turns_and_events_are_saved_in_the_database(tmp_path):
-    config, console, _, errors, _ = chat_setup(tmp_path)
+    config, terminal, _, _ = chat_setup(tmp_path, "a", "b")
     gateway = FakeModelGateway([Chunk("one"), Usage(5, 2)], [Chunk("two")])
-    await run_chat(config, console, errors, gateway=gateway, read_line=scripted("a", "b"))
+    await run_chat(config, terminal, gateway)
 
     db = connect(config.storage.db_path)
     [session_id] = [row[0] for row in db.execute("SELECT id FROM sessions")]

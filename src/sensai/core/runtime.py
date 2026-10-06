@@ -9,18 +9,18 @@ caches) plug into `entry_hooks` / `exit_hooks` without changing the loop.
 
 Event payloads (all events also carry `run_id`):
 
-    run.started         session_id, model
-    model.chunk         text
-    model.tool_call     call_id, name, args
-    model.usage         prompt_tokens, completion_tokens
-    approval.requested  call_id, tool, risk, preview
-    approval.resolved   call_id, approved
-    tool.started        call_id, tool, risk, args
-    tool.finished       call_id, tool, is_error, duration_ms, content
-    tool.failed         call_id, tool, error
-    run.completed       session_id, steps, tool_calls
-    run.cancelled       session_id, partial
-    run.failed          session_id, error_type, error
+- run.started: session_id, model
+- model.chunk: text
+- model.tool_call: call_id, name, args
+- model.usage: prompt_tokens, completion_tokens
+- approval.requested: call_id, tool, risk, preview
+- approval.resolved: call_id, tool, approved
+- tool.started: call_id, tool, risk, args
+- tool.finished: call_id, tool, is_error, duration_ms, content
+- tool.failed: call_id, tool, error
+- run.completed: session_id, steps, tool_calls
+- run.cancelled: session_id, partial
+- run.failed: session_id, error_type, error
 """
 
 import asyncio
@@ -30,7 +30,7 @@ from dataclasses import dataclass, field, replace
 from typing import Any, Literal
 
 from sensai.core.config import RuntimeConfig
-from sensai.core.contracts import EventSink, ModelGateway, SessionStore, UserChannel
+from sensai.core.contracts import EventSink, ModelGateway, SessionStore, Tool, UserChannel
 from sensai.core.errors import RunLimitError, SensaiError
 from sensai.core.events import (
     APPROVAL_REQUESTED,
@@ -87,6 +87,18 @@ class RunContext:
 Hook = Callable[[RunContext], Awaitable[None]]
 
 
+@dataclass(frozen=True)
+class RuntimeDeps:
+    """The collaborators of the runtime, built by the caller."""
+
+    gateway: ModelGateway
+    store: SessionStore
+    sink: EventSink
+    channel: UserChannel
+    registry: ToolRegistry
+    policy: ApprovalPolicy
+
+
 @dataclass
 class _RunState:
     new_messages: list[Message] = field(default_factory=list)
@@ -99,23 +111,12 @@ class _RunState:
 class AgentRuntime:
     def __init__(
         self,
-        *,
-        gateway: ModelGateway,
-        store: SessionStore,
-        sink: EventSink,
-        channel: UserChannel,
-        registry: ToolRegistry,
-        policy: ApprovalPolicy,
+        deps: RuntimeDeps,
         config: RuntimeConfig,
         model_name: str,
         system_prompt: str | None = None,
     ) -> None:
-        self._gateway = gateway
-        self._store = store
-        self._sink = sink
-        self._channel = channel
-        self._registry = registry
-        self._policy = policy
+        self._deps = deps
         self._config = config
         self._model_name = model_name
         self._system_prompt = system_prompt
@@ -131,68 +132,56 @@ class AgentRuntime:
         state = _RunState()
         self._emit(RUN_STARTED, run_id, session_id=session_id, model=self._model_name)
         try:
-            answer = await asyncio.wait_for(
-                self._execute(run_id, session_id, user_text, state), self._config.timeout_s
-            )
-            self._persist(session_id, state.new_messages)
+            answer = await self._run_and_save(run_id, session_id, user_text, state)
         except asyncio.CancelledError:
             self._cancel(run_id, session_id, state)
             raise
         except asyncio.TimeoutError:
-            limit = f"Délai dépassé : le tour a dépassé {self._config.timeout_s} s."
-            return self._fail(run_id, session_id, RunLimitError(limit))
+            return self._fail(run_id, session_id, self._timeout_error())
         except SensaiError as exc:
             return self._fail(run_id, session_id, exc)
         except Exception as exc:
             self._emit_failed(run_id, session_id, exc)
             raise
-        self._emit(
-            RUN_COMPLETED,
-            run_id,
-            session_id=session_id,
-            steps=state.steps,
-            tool_calls=state.tool_calls,
-        )
-        return RunResult(run_id, "completed", answer)
+        return self._complete(run_id, session_id, state, answer)
+
+    async def _run_and_save(
+        self, run_id: str, session_id: str, user_text: str, state: _RunState
+    ) -> str:
+        turn = self._execute(run_id, session_id, user_text, state)
+        answer = await asyncio.wait_for(turn, self._config.timeout_s)
+        self._persist(session_id, state.new_messages)
+        return answer
 
     async def _execute(self, run_id: str, session_id: str, user_text: str, state: _RunState) -> str:
         ctx = RunContext(run_id, session_id, user_text)
-        for hook in self.entry_hooks:
-            await hook(ctx)
-
-        prefix = [Message("system", self._system_prompt)] if self._system_prompt else []
-        user_message = Message("user", ctx.user_text)
-        ctx.messages = [*prefix, *self._store.history(session_id), user_message]
-        state.new_messages.append(user_message)
-        specs = self._registry.specs() or None
-
-        while True:
-            state.steps += 1
-            if state.steps > self._config.max_steps:
-                raise RunLimitError(
-                    f"Limite atteinte : {self._config.max_steps} étapes maximum par tour."
-                )
-            assistant, call_ids = await self._stream_model(ctx, state, specs)
-            if not assistant.tool_calls:
-                break
-            tool_messages = []
-            for call_id, call in zip(call_ids, assistant.tool_calls, strict=True):
-                state.tool_calls += 1
-                if state.tool_calls > self._config.max_tool_calls:
-                    raise RunLimitError(
-                        f"Limite atteinte : {self._config.max_tool_calls} appels d'outils "
-                        "maximum par tour."
-                    )
-                tool_messages.append(await self._run_tool(ctx, call_id, call))
-            # An iteration is saved only once all its tool results exist.
-            ctx.messages.extend([assistant, *tool_messages])
-            state.new_messages.extend([assistant, *tool_messages])
-
+        await _run_hooks(self.entry_hooks, ctx)
+        self._build_context(ctx, state)
+        assistant = await self._model_loop(ctx, state)
         ctx.answer = assistant.content
-        for hook in self.exit_hooks:
-            await hook(ctx)
+        await _run_hooks(self.exit_hooks, ctx)
         state.new_messages.append(replace(assistant, content=ctx.answer))
         return ctx.answer
+
+    def _build_context(self, ctx: RunContext, state: _RunState) -> None:
+        prefix = [Message("system", self._system_prompt)] if self._system_prompt else []
+        user_message = Message("user", ctx.user_text)
+        history = self._deps.store.history(ctx.session_id)
+        ctx.messages = [*prefix, *history, user_message]
+        state.new_messages.append(user_message)
+
+    async def _model_loop(self, ctx: RunContext, state: _RunState) -> Message:
+        """Call the model until it answers without asking for a tool."""
+        specs = self._deps.registry.specs() or None
+        while True:
+            self._count_step(state)
+            assistant, call_ids = await self._stream_model(ctx, state, specs)
+            if not assistant.tool_calls:
+                return assistant
+            results = await self._run_tools(ctx, state, assistant, call_ids)
+            # An iteration is kept only once all its tool results exist.
+            ctx.messages.extend([assistant, *results])
+            state.new_messages.extend([assistant, *results])
 
     async def _stream_model(
         self, ctx: RunContext, state: _RunState, specs: list[ToolSpec] | None
@@ -200,94 +189,121 @@ class AgentRuntime:
         calls: list[ToolCall] = []
         call_ids: list[str] = []
         state.partial_text = ""
-        async for event in self._gateway.stream_chat(ctx.messages, tools=specs):
+        async for event in self._deps.gateway.stream_chat(ctx.messages, tools=specs):
             if isinstance(event, Chunk):
-                state.partial_text += event.text
-                self._emit(MODEL_CHUNK, ctx.run_id, text=event.text)
+                self._on_chunk(ctx, state, event)
             elif isinstance(event, ToolCall):
-                call_id = new_id()
                 calls.append(event)
-                call_ids.append(call_id)
-                self._emit(
-                    MODEL_TOOL_CALL, ctx.run_id, call_id=call_id, name=event.name, args=event.args
-                )
+                call_ids.append(self._on_tool_call(ctx, event))
             elif isinstance(event, Usage):
-                state.tokens += event.prompt_tokens + event.completion_tokens
-                self._emit(
-                    MODEL_USAGE,
-                    ctx.run_id,
-                    prompt_tokens=event.prompt_tokens,
-                    completion_tokens=event.completion_tokens,
-                )
-                if state.tokens > self._config.max_tokens:
-                    raise RunLimitError(
-                        f"Limite atteinte : {self._config.max_tokens} tokens maximum par tour."
-                    )
+                self._on_usage(ctx, state, event)
         text, state.partial_text = state.partial_text, ""
         return Message("assistant", text, tool_calls=tuple(calls)), call_ids
 
-    async def _run_tool(self, ctx: RunContext, call_id: str, call: ToolCall) -> Message:
-        tool = self._registry.get(call.name)
-        if tool is None:
-            self._emit(
-                TOOL_FAILED, ctx.run_id, call_id=call_id, tool=call.name, error="unknown tool"
-            )
-            return _tool_message(call.name, ToolResult(f"Unknown tool: {call.name}", is_error=True))
+    def _on_chunk(self, ctx: RunContext, state: _RunState, chunk: Chunk) -> None:
+        state.partial_text += chunk.text
+        self._emit(MODEL_CHUNK, ctx.run_id, text=chunk.text)
 
-        decision = self._policy.decide(tool)
-        if decision == "deny":
-            self._emit(TOOL_FAILED, ctx.run_id, call_id=call_id, tool=tool.name, error="denied")
-            denied = ToolResult(f"The policy does not allow {tool.risk} tools.", is_error=True)
-            return _tool_message(tool.name, denied)
-        if decision == "ask":
-            request = ApprovalRequest(
-                ctx.run_id, tool.name, tool.risk, preview_call(tool.name, call.args), call.args
-            )
-            self._emit(
-                APPROVAL_REQUESTED,
-                ctx.run_id,
-                call_id=call_id,
-                tool=tool.name,
-                risk=tool.risk,
-                preview=request.preview,
-            )
-            approved = await self._channel.confirm(request)
-            self._emit(APPROVAL_RESOLVED, ctx.run_id, call_id=call_id, approved=approved)
-            if not approved:
-                refused = ToolResult("The user refused this action.", is_error=True)
-                return _tool_message(tool.name, refused)
+    def _on_tool_call(self, ctx: RunContext, call: ToolCall) -> str:
+        call_id = new_id()
+        self._emit(MODEL_TOOL_CALL, ctx.run_id, call_id=call_id, name=call.name, args=call.args)
+        return call_id
 
+    def _on_usage(self, ctx: RunContext, state: _RunState, usage: Usage) -> None:
+        state.tokens += usage.prompt_tokens + usage.completion_tokens
         self._emit(
-            TOOL_STARTED,
+            MODEL_USAGE,
             ctx.run_id,
-            call_id=call_id,
-            tool=tool.name,
-            risk=tool.risk,
-            args=call.args,
+            prompt_tokens=usage.prompt_tokens,
+            completion_tokens=usage.completion_tokens,
         )
+        if state.tokens > self._config.max_tokens:
+            raise _limit_error(self._config.max_tokens, "tokens")
+
+    def _count_step(self, state: _RunState) -> None:
+        state.steps += 1
+        if state.steps > self._config.max_steps:
+            raise _limit_error(self._config.max_steps, "étapes")
+
+    def _count_tool_call(self, state: _RunState) -> None:
+        state.tool_calls += 1
+        if state.tool_calls > self._config.max_tool_calls:
+            raise _limit_error(self._config.max_tool_calls, "appels d'outils")
+
+    async def _run_tools(
+        self, ctx: RunContext, state: _RunState, assistant: Message, call_ids: list[str]
+    ) -> list[Message]:
+        messages = []
+        for call_id, call in zip(call_ids, assistant.tool_calls, strict=True):
+            self._count_tool_call(state)
+            messages.append(await self._run_tool(ctx, call_id, call))
+        return messages
+
+    async def _run_tool(self, ctx: RunContext, call_id: str, call: ToolCall) -> Message:
+        tool = self._deps.registry.get(call.name)
+        if tool is None:
+            self._emit_tool(TOOL_FAILED, ctx, call_id, call.name, error="unknown tool")
+            result = _error(f"Unknown tool: {call.name}")
+        else:
+            result = await self._run_allowed(ctx, call_id, tool, call)
+        return _tool_message(call.name, result)
+
+    async def _run_allowed(
+        self, ctx: RunContext, call_id: str, tool: Tool, call: ToolCall
+    ) -> ToolResult:
+        refusal = await self._check_policy(ctx, call_id, tool, call)
+        if refusal is not None:
+            return refusal
+        return await self._execute_tool(ctx, call_id, tool, call)
+
+    async def _check_policy(
+        self, ctx: RunContext, call_id: str, tool: Tool, call: ToolCall
+    ) -> ToolResult | None:
+        """Return an error result if the policy or the user stops the call, else None."""
+        decision = self._deps.policy.decide(tool)
+        if decision == "deny":
+            self._emit_tool(TOOL_FAILED, ctx, call_id, tool.name, error="denied")
+            return _error(f"The policy does not allow {tool.risk} tools.")
+        if decision == "ask" and not await self._ask_user(ctx, call_id, tool, call):
+            return _error("The user refused this action.")
+        return None
+
+    async def _ask_user(self, ctx: RunContext, call_id: str, tool: Tool, call: ToolCall) -> bool:
+        preview = preview_call(tool.name, call.args)
+        request = ApprovalRequest(ctx.run_id, tool.name, tool.risk, preview, call.args)
+        self._emit_tool(
+            APPROVAL_REQUESTED, ctx, call_id, tool.name, risk=tool.risk, preview=preview
+        )
+        approved = await self._deps.channel.confirm(request)
+        self._emit_tool(APPROVAL_RESOLVED, ctx, call_id, tool.name, approved=approved)
+        return approved
+
+    async def _execute_tool(
+        self, ctx: RunContext, call_id: str, tool: Tool, call: ToolCall
+    ) -> ToolResult:
+        self._emit_tool(TOOL_STARTED, ctx, call_id, tool.name, risk=tool.risk, args=call.args)
         started = time.perf_counter()
         try:
             result = await tool.run(call.args, ToolContext(ctx.run_id, ctx.session_id))
         except Exception as exc:
             error = f"{type(exc).__name__}: {exc}"
-            self._emit(TOOL_FAILED, ctx.run_id, call_id=call_id, tool=tool.name, error=error)
-            return _tool_message(tool.name, ToolResult(f"Tool error: {error}", is_error=True))
-        self._emit(
-            TOOL_FINISHED,
-            ctx.run_id,
-            call_id=call_id,
-            tool=tool.name,
-            is_error=result.is_error,
-            duration_ms=(time.perf_counter() - started) * 1000,
-            content=result.content,
-        )
-        return _tool_message(tool.name, result)
+            self._emit_tool(TOOL_FAILED, ctx, call_id, tool.name, error=error)
+            return _error(f"Tool error: {error}")
+        duration_ms = (time.perf_counter() - started) * 1000
+        details = {"is_error": result.is_error, "duration_ms": duration_ms}
+        self._emit_tool(TOOL_FINISHED, ctx, call_id, tool.name, content=result.content, **details)
+        return result
 
     def _persist(self, session_id: str, messages: list[Message]) -> None:
-        history = self._store.history(session_id)
+        history = self._deps.store.history(session_id)
         parent_id = history[-1].id if history else None
         for message in messages:
-            parent_id = self._store.append(session_id, message, parent_id)
+            parent_id = self._deps.store.append(session_id, message, parent_id)
+
+    def _complete(self, run_id: str, session_id: str, state: _RunState, answer: str) -> RunResult:
+        steps, tool_calls = state.steps, state.tool_calls
+        self._emit(RUN_COMPLETED, run_id, session_id=session_id, steps=steps, tool_calls=tool_calls)
+        return RunResult(run_id, "completed", answer)
 
     def _cancel(self, run_id: str, session_id: str, state: _RunState) -> None:
         messages = list(state.new_messages)
@@ -302,16 +318,32 @@ class AgentRuntime:
         return RunResult(run_id, "failed", error=str(error))
 
     def _emit_failed(self, run_id: str, session_id: str, error: Exception) -> None:
-        self._emit(
-            RUN_FAILED,
-            run_id,
-            session_id=session_id,
-            error_type=type(error).__name__,
-            error=str(error),
-        )
+        name = type(error).__name__
+        self._emit(RUN_FAILED, run_id, session_id=session_id, error_type=name, error=str(error))
+
+    def _timeout_error(self) -> RunLimitError:
+        return RunLimitError(f"Délai dépassé : le tour a dépassé {self._config.timeout_s} s.")
+
+    def _emit_tool(
+        self, type_: str, ctx: RunContext, call_id: str, tool_name: str, **payload: Any
+    ) -> None:
+        self._emit(type_, ctx.run_id, call_id=call_id, tool=tool_name, **payload)
 
     def _emit(self, type_: str, run_id: str, **payload: Any) -> None:
-        self._sink.emit(make_event(type_, run_id, payload))
+        self._deps.sink.emit(make_event(type_, run_id, payload))
+
+
+async def _run_hooks(hooks: list[Hook], ctx: RunContext) -> None:
+    for hook in hooks:
+        await hook(ctx)
+
+
+def _limit_error(maximum: int, unit: str) -> RunLimitError:
+    return RunLimitError(f"Limite atteinte : {maximum} {unit} maximum par tour.")
+
+
+def _error(message: str) -> ToolResult:
+    return ToolResult(message, is_error=True)
 
 
 def _tool_message(name: str, result: ToolResult) -> Message:

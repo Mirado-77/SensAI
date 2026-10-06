@@ -3,18 +3,19 @@
 import asyncio
 import signal
 import sqlite3
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable
+from typing import Any
 
-from rich.console import Console
 from rich.text import Text
 
 from sensai.cli.channel import CliUserChannel
 from sensai.cli.render import ConsoleRenderer
+from sensai.cli.terminal import Terminal
 from sensai.core.bus import EventBus
 from sensai.core.config import Config
 from sensai.core.contracts import ModelGateway
 from sensai.core.errors import SensaiError
-from sensai.core.runtime import AgentRuntime, RunResult
+from sensai.core.runtime import AgentRuntime, RunResult, RuntimeDeps
 from sensai.db.connection import connect
 from sensai.memory.sqlite_store import SqliteSessionStore
 from sensai.model.ollama import OllamaGateway
@@ -25,84 +26,95 @@ from sensai.tools.registry import ToolRegistry
 EXIT_COMMANDS = {"/exit", "/quit"}
 
 
+class _SigintCanceller:
+    """While active, Ctrl-C cancels `task` instead of raising KeyboardInterrupt."""
+
+    def __init__(self, task: asyncio.Future[Any]) -> None:
+        self.triggered = False
+        self._task = task
+        self._installed = False
+
+    def __enter__(self) -> "_SigintCanceller":
+        loop = asyncio.get_running_loop()
+        try:
+            loop.add_signal_handler(signal.SIGINT, self._cancel)
+            self._installed = True
+        except (NotImplementedError, RuntimeError, ValueError):
+            pass
+        return self
+
+    def __exit__(self, *exc_info: object) -> None:
+        if self._installed:
+            asyncio.get_running_loop().remove_signal_handler(signal.SIGINT)
+
+    def _cancel(self) -> None:
+        self.triggered = True
+        self._task.cancel()
+
+
 async def run_interruptible(turn: Awaitable[RunResult]) -> RunResult | None:
     """Run `turn`; Ctrl-C cancels it instead of exiting. Return None if it was interrupted."""
-    loop = asyncio.get_running_loop()
     task = asyncio.ensure_future(turn)
-    interrupted = False
-
-    def on_sigint() -> None:
-        nonlocal interrupted
-        interrupted = True
-        task.cancel()
-
-    try:
-        loop.add_signal_handler(signal.SIGINT, on_sigint)
-        handler_installed = True
-    except (NotImplementedError, RuntimeError, ValueError):
-        handler_installed = False
-    try:
-        return await task
-    except asyncio.CancelledError:
-        if not interrupted:
-            raise
-        return None
-    finally:
-        if handler_installed:
-            loop.remove_signal_handler(signal.SIGINT)
+    with _SigintCanceller(task) as canceller:
+        try:
+            return await task
+        except asyncio.CancelledError:
+            if not canceller.triggered:
+                raise
+            return None
 
 
-async def chat_loop(
-    runtime: AgentRuntime,
-    session_id: str,
-    console: Console,
-    read_line: Callable[[str], str] = input,
-) -> None:
+async def chat_loop(runtime: AgentRuntime, session_id: str, terminal: Terminal) -> None:
     """Read lines and run one turn per line, until /exit, Ctrl-D or Ctrl-C at the prompt."""
     while True:
         try:
-            text = read_line("you> ").strip()
+            text = terminal.read_line("you> ").strip()
         except (EOFError, KeyboardInterrupt):
-            console.print()
+            terminal.console.print()
             return
-        if not text:
-            continue
         if text in EXIT_COMMANDS:
             return
-        await run_interruptible(runtime.run_turn(session_id, text))
+        if text:
+            await run_interruptible(runtime.run_turn(session_id, text))
 
 
-async def run_chat(
-    config: Config,
-    console: Console,
-    error_console: Console,
-    *,
-    gateway: ModelGateway | None = None,
-    read_line: Callable[[str], str] = input,
-) -> int:
+async def run_chat(config: Config, terminal: Terminal, gateway: ModelGateway | None = None) -> int:
     """Open the database, build the runtime and chat. Return the process exit code."""
-    try:
-        connection = connect(config.storage.db_path)
-    except (OSError, sqlite3.Error, SensaiError) as exc:
-        message = f"Erreur : base de données inutilisable : {exc}"
-        error_console.print(Text(message, style="bold red"))
+    connection = _open_database(config, terminal)
+    if connection is None:
         return 2
     try:
-        store = SqliteSessionStore(connection)
-        renderer = ConsoleRenderer(console, error_console)
-        runtime = AgentRuntime(
-            gateway=gateway
-            or OllamaGateway(config.model.host, config.model.name, config.model.timeout_s),
-            store=store,
-            sink=EventBus([SqliteEventJournal(connection), renderer]),
-            channel=CliUserChannel(console, read_line),
-            registry=ToolRegistry(),
-            policy=ApprovalPolicy.from_config(config.policy),
-            config=config.runtime,
-            model_name=config.model.name,
-        )
-        console.print(Text(f"SENSAI | model: {config.model.name} | /exit or Ctrl-D to quit", "dim"))
-        await chat_loop(runtime, store.create_session(), console, read_line)
+        deps = _build_deps(config, terminal, connection, gateway)
+        runtime = AgentRuntime(deps, config.runtime, config.model.name)
+        banner = f"SENSAI | model: {config.model.name} | /exit or Ctrl-D to quit"
+        terminal.console.print(Text(banner, "dim"))
+        await chat_loop(runtime, deps.store.create_session(), terminal)
         return 0
     finally:
         connection.close()
+
+
+def _open_database(config: Config, terminal: Terminal) -> sqlite3.Connection | None:
+    try:
+        return connect(config.storage.db_path)
+    except (OSError, sqlite3.Error, SensaiError) as exc:
+        message = f"Erreur : base de données inutilisable : {exc}"
+        terminal.errors.print(Text(message, style="bold red"))
+        return None
+
+
+def _build_deps(
+    config: Config,
+    terminal: Terminal,
+    connection: sqlite3.Connection,
+    gateway: ModelGateway | None,
+) -> RuntimeDeps:
+    model = config.model
+    return RuntimeDeps(
+        gateway=gateway or OllamaGateway(model.host, model.name, model.timeout_s),
+        store=SqliteSessionStore(connection),
+        sink=EventBus([SqliteEventJournal(connection), ConsoleRenderer(terminal)]),
+        channel=CliUserChannel(terminal),
+        registry=ToolRegistry(),
+        policy=ApprovalPolicy.from_config(config.policy),
+    )

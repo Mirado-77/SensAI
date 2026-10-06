@@ -34,6 +34,14 @@ SELECT 1 FROM tree WHERE id = :message
 """
 
 
+_INSERT_MESSAGE = (
+    "INSERT INTO messages (id, session_id, parent_id, role, content, status,"
+    " tool_calls_json, tool_name, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+)
+
+_SET_HEAD = "UPDATE sessions SET head_message_id = ? WHERE id = ?"
+
+
 class SqliteSessionStore:
     def __init__(self, connection: sqlite3.Connection) -> None:
         self._db = connection
@@ -60,30 +68,10 @@ class SqliteSessionStore:
         if parent_id is not None:
             self._require_message(parent_id)
         message_id = new_id()
-        tool_calls = (
-            json.dumps([{"name": call.name, "args": call.args} for call in msg.tool_calls])
-            if msg.tool_calls
-            else None
-        )
+        row = _message_row(message_id, session_id, parent_id, msg)
         with self._db:
-            self._db.execute(
-                "INSERT INTO messages (id, session_id, parent_id, role, content, status,"
-                " tool_calls_json, tool_name, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    message_id,
-                    session_id,
-                    parent_id,
-                    msg.role,
-                    msg.content,
-                    msg.status,
-                    tool_calls,
-                    msg.tool_name,
-                    time.time(),
-                ),
-            )
-            self._db.execute(
-                "UPDATE sessions SET head_message_id = ? WHERE id = ?", (message_id, session_id)
-            )
+            self._db.execute(_INSERT_MESSAGE, row)
+            self._db.execute(_SET_HEAD, (message_id, session_id))
         return message_id
 
     def history(self, session_id: str, head_id: str | None = None) -> list[Message]:
@@ -135,6 +123,21 @@ class SqliteSessionStore:
     def _in_tree(self, session_id: str, message_id: str) -> bool:
         row = self._db.execute(_IN_TREE_SQL, {"session": session_id, "message": message_id})
         return row.fetchone() is not None
+
+
+def _message_row(message_id: str, session_id: str, parent_id: str | None, msg: Message) -> tuple:
+    tool_calls = [{"name": call.name, "args": call.args} for call in msg.tool_calls]
+    return (
+        message_id,
+        session_id,
+        parent_id,
+        msg.role,
+        msg.content,
+        msg.status,
+        json.dumps(tool_calls) if tool_calls else None,
+        msg.tool_name,
+        time.time(),
+    )
 
 
 def _to_message(row: sqlite3.Row) -> Message:

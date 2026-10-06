@@ -9,6 +9,10 @@ from sensai.core.errors import MigrationError
 
 MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 _MIGRATION_NAME = re.compile(r"^(\d{3})_([a-z0-9]+)_([a-z0-9_]+)\.sql$")
+_CREATE_VERSION_TABLE = (
+    "CREATE TABLE IF NOT EXISTS schema_version ("
+    "version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at REAL NOT NULL)"
+)
 
 
 def connect(path: Path | str) -> sqlite3.Connection:
@@ -29,28 +33,26 @@ def migrate(connection: sqlite3.Connection, migrations_dir: Path = MIGRATIONS_DI
     Files are named `NNN_<feature-id>_<description>.sql`. Each one runs in a transaction that
     is rolled back if it fails.
     """
-    connection.execute(
-        "CREATE TABLE IF NOT EXISTS schema_version ("
-        "version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at REAL NOT NULL)"
-    )
+    connection.execute(_CREATE_VERSION_TABLE)
     connection.commit()
     applied = {row[0] for row in connection.execute("SELECT version FROM schema_version")}
-    done = []
-    for version, name, sql in _load(migrations_dir):
-        if version in applied:
-            continue
-        try:
-            connection.executescript(f"BEGIN;\n{sql}")
-            connection.execute(
-                "INSERT INTO schema_version (version, name, applied_at) VALUES (?, ?, ?)",
-                (version, name, time.time()),
-            )
-            connection.commit()
-        except sqlite3.Error as exc:
-            connection.rollback()
-            raise MigrationError(f"Échec de la migration {name} : {exc}") from exc
-        done.append(version)
-    return done
+    pending = [migration for migration in _load(migrations_dir) if migration[0] not in applied]
+    for version, name, sql in pending:
+        _apply(connection, version, name, sql)
+    return [version for version, _, _ in pending]
+
+
+def _apply(connection: sqlite3.Connection, version: int, name: str, sql: str) -> None:
+    try:
+        connection.executescript(f"BEGIN;\n{sql}")
+        connection.execute(
+            "INSERT INTO schema_version (version, name, applied_at) VALUES (?, ?, ?)",
+            (version, name, time.time()),
+        )
+        connection.commit()
+    except sqlite3.Error as exc:
+        connection.rollback()
+        raise MigrationError(f"Échec de la migration {name} : {exc}") from exc
 
 
 def _load(migrations_dir: Path) -> list[tuple[int, str, str]]:

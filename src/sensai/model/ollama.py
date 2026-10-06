@@ -2,12 +2,15 @@
 
 import json
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Any
 
 import httpx
 
 from sensai.core.errors import ModelConnectionError, ModelError, ModelNotFoundError
 from sensai.core.types import Chunk, Done, Message, ModelEvent, ToolCall, ToolSpec, Usage
+
+_CUT_MESSAGE = "La connexion avec Ollama s'est interrompue avant la fin de la réponse."
 
 
 class OllamaGateway:
@@ -24,28 +27,28 @@ class OllamaGateway:
     ) -> AsyncIterator[ModelEvent]:
         payload = _build_payload(self._model, messages, tools, schema)
         try:
-            async with httpx.AsyncClient(base_url=self._host, timeout=self._timeout) as client:
-                async with client.stream("POST", "/api/chat", json=payload) as response:
-                    if response.status_code != 200:
-                        raise await _status_error(response, self._model)
-                    finished = False
-                    async for line in response.aiter_lines():
-                        if not line.strip():
-                            continue
-                        data = _parse_line(line, self._model)
-                        for event in _events_from(data):
-                            yield event
-                        if data.get("done"):
-                            finished = True
-                            break
-                    if not finished:
-                        raise ModelConnectionError(
-                            "La connexion avec Ollama s'est interrompue avant la fin de la réponse."
-                        )
+            async with self._open(payload) as response:
+                done = False
+                async for line in response.aiter_lines():
+                    events, done = _parse_events(line, self._model)
+                    for event in events:
+                        yield event
+                    if done:
+                        break
+                if not done:
+                    raise ModelConnectionError(_CUT_MESSAGE)
         except httpx.TransportError as exc:
             detail = str(exc) or type(exc).__name__
             raise ModelConnectionError(f"Ollama est injoignable à {self._host} : {detail}") from exc
         yield Done()
+
+    @asynccontextmanager
+    async def _open(self, payload: dict[str, Any]) -> AsyncIterator[httpx.Response]:
+        async with httpx.AsyncClient(base_url=self._host, timeout=self._timeout) as client:
+            async with client.stream("POST", "/api/chat", json=payload) as response:
+                if response.status_code != 200:
+                    raise await _status_error(response, self._model)
+                yield response
 
 
 def _build_payload(
@@ -60,20 +63,19 @@ def _build_payload(
         "stream": True,
     }
     if tools:
-        payload["tools"] = [
-            {
-                "type": "function",
-                "function": {
-                    "name": tool.name,
-                    "description": tool.description,
-                    "parameters": tool.parameters,
-                },
-            }
-            for tool in tools
-        ]
+        payload["tools"] = [_tool_payload(tool) for tool in tools]
     if schema is not None:
         payload["format"] = schema
     return payload
+
+
+def _tool_payload(tool: ToolSpec) -> dict[str, Any]:
+    function = {
+        "name": tool.name,
+        "description": tool.description,
+        "parameters": tool.parameters,
+    }
+    return {"type": "function", "function": function}
 
 
 def _message_payload(message: Message) -> dict[str, Any]:
@@ -87,13 +89,21 @@ def _message_payload(message: Message) -> dict[str, Any]:
     return payload
 
 
+def _parse_events(line: str, model: str) -> tuple[list[ModelEvent], bool]:
+    """Events of one NDJSON line, and whether it is the last line of the response."""
+    if not line.strip():
+        return [], False
+    data = _parse_line(line, model)
+    return _events_from(data), bool(data.get("done"))
+
+
 def _parse_line(line: str, model: str) -> dict[str, Any]:
     try:
         data = json.loads(line)
     except json.JSONDecodeError as exc:
-        raise ModelError(f"Réponse invalide d'Ollama : {line[:200]!r}") from exc
+        raise _invalid_response(line) from exc
     if not isinstance(data, dict):
-        raise ModelError(f"Réponse invalide d'Ollama : {line[:200]!r}")
+        raise _invalid_response(line)
     if "error" in data:
         raise _error_from_detail(str(data["error"]), model)
     return data
@@ -111,7 +121,7 @@ def _events_from(data: dict[str, Any]) -> list[ModelEvent]:
         if data.get("done") and ("prompt_eval_count" in data or "eval_count" in data):
             events.append(Usage(data.get("prompt_eval_count", 0), data.get("eval_count", 0)))
     except (KeyError, TypeError, AttributeError) as exc:
-        raise ModelError(f"Réponse invalide d'Ollama : {json.dumps(data)[:200]}") from exc
+        raise _invalid_response(json.dumps(data)) from exc
     return events
 
 
@@ -129,3 +139,7 @@ def _error_from_detail(detail: str, model: str, status: int | None = None) -> Mo
         return ModelNotFoundError(f"Modèle introuvable sur Ollama : {model!r} ({detail})")
     suffix = f" (statut {status})" if status else ""
     return ModelError(f"Erreur d'Ollama{suffix} : {detail}")
+
+
+def _invalid_response(text: str) -> ModelError:
+    return ModelError(f"Réponse invalide d'Ollama : {text[:200]!r}")

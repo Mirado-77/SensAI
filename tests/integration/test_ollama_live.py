@@ -12,6 +12,7 @@ import pytest
 from rich.console import Console
 
 from sensai.cli.chat import run_chat
+from sensai.cli.terminal import Terminal
 from sensai.core.config import load_config
 from sensai.core.errors import ModelConnectionError, ModelNotFoundError
 from sensai.core.types import Chunk, Done, Message
@@ -73,7 +74,8 @@ async def test_a_full_chat_turn_with_the_real_model(config, gateway):
     out, err = io.StringIO(), io.StringIO()
     console = Console(file=out, color_system=None, force_terminal=False, highlight=False)
     errors = Console(file=err, color_system=None, force_terminal=False, highlight=False)
-    code = await run_chat(config, console, errors, read_line=lambda prompt: next(lines))
+    terminal = Terminal(console, errors, lambda prompt: next(lines))
+    code = await run_chat(config, terminal)
     assert code == 0
     assert "sensai> " in out.getvalue()
     assert err.getvalue() == ""
