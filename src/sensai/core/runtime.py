@@ -179,7 +179,6 @@ class AgentRuntime:
             if not assistant.tool_calls:
                 return assistant
             results = await self._run_tools(ctx, state, assistant, call_ids)
-            # An iteration is kept only once all its tool results exist.
             ctx.messages.extend([assistant, *results])
             state.new_messages.extend([assistant, *results])
 

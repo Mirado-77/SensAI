@@ -42,7 +42,7 @@ def test_reserved_types_are_accepted():
 def test_event_is_immutable():
     event = make_event(RUN_STARTED, "r1")
     with pytest.raises(dataclasses.FrozenInstanceError):
-        event.type = "run.failed"  # type: ignore[misc]
+        event.type = "run.failed"
 
 
 def test_initial_vocabulary_is_complete():

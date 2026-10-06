@@ -48,8 +48,12 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 def _run(config: Config, terminal: Terminal) -> int:
-    # asyncio.run installs its own SIGINT handler unless a custom one is set. That handler would
-    # swallow Ctrl-C while input() is waiting at the prompt.
+    """Run the chat and return the exit code.
+
+    asyncio.run installs its own SIGINT handler unless a custom one is set. That handler would
+    swallow Ctrl-C while input() is waiting at the prompt, so a handler that raises
+    KeyboardInterrupt is set first.
+    """
     previous_handler = signal.signal(signal.SIGINT, _raise_keyboard_interrupt)
     try:
         return asyncio.run(run_chat(config, terminal))

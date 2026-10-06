@@ -56,7 +56,7 @@ class FakeModelGateway:
         if not self._scripts:
             raise AssertionError("FakeModelGateway : plus de script pour cet appel.")
         for event in self._scripts.popleft():
-            await asyncio.sleep(0)  # yield control so the stream can be cancelled
+            await asyncio.sleep(0)
             yield event
         yield Done()
 
