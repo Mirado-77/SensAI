@@ -1,7 +1,7 @@
 VENV := .venv
 BIN := $(VENV)/bin
 
-.PHONY: install lint format test test-integration ollama
+.PHONY: install lint format test test-integration ollama chat
 
 install:
 	python3 -m venv $(VENV)
@@ -23,3 +23,6 @@ test-integration:
 
 ollama:
 	./docker/ollama/run-ollama.sh
+
+chat:
+	$(BIN)/sensai chat $(ARGS)
