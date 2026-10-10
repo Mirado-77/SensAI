@@ -6,8 +6,9 @@ from pydantic import BaseModel
 
 from sensai.core.errors import ModelConnectionError, StructuredOutputError
 from sensai.core.fakes import FakeModelGateway
+from sensai.core.schema import schema_errors
 from sensai.core.types import Chunk, Message, Usage
-from sensai.model.structured import generate_structured, schema_errors
+from sensai.model.structured import generate_structured
 
 pytestmark = pytest.mark.feature("T5")
 

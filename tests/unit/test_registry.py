@@ -29,3 +29,15 @@ def test_an_empty_registry_has_no_specs():
     registry = ToolRegistry()
     assert len(registry) == 0
     assert registry.specs() == []
+
+
+@pytest.mark.feature("T5")
+def test_a_tool_with_an_invalid_parameters_schema_is_rejected():
+    with pytest.raises(ValueError, match="Schéma de paramètres invalide pour broken"):
+        ToolRegistry([FakeTool(name="broken", parameters={"type": "nope"})])
+
+
+@pytest.mark.feature("T5")
+def test_tool_parameters_must_be_an_object_schema():
+    with pytest.raises(ValueError, match="type object"):
+        ToolRegistry([FakeTool(name="listy", parameters={"type": "array"})])

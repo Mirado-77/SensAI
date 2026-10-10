@@ -16,18 +16,16 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-import jsonschema
 from pydantic import BaseModel, ValidationError
 
 from sensai.core.contracts import ModelGateway
 from sensai.core.errors import StructuredOutputError
 from sensai.core.events import STRUCTURED_FAILED, STRUCTURED_REPAIRED
+from sensai.core.schema import MAX_ERRORS_SHOWN, check_schema, schema_errors
 from sensai.core.types import Chunk, Message, Usage
 
 Target = type[BaseModel] | dict[str, Any]
 OnEvent = Callable[[str, dict[str, Any]], None]
-
-MAX_ERRORS_SHOWN = 5
 
 _SCHEMA_INSTRUCTION = (
     "Answer only with a JSON value that conforms to this JSON Schema. "
@@ -84,7 +82,7 @@ class _Validator:
     @classmethod
     def for_target(cls, target: Target) -> "_Validator":
         if isinstance(target, dict):
-            jsonschema.Draft202012Validator.check_schema(target)
+            check_schema(target)
             return cls(target, None)
         return cls(target.model_json_schema(), target)
 
@@ -98,18 +96,6 @@ class _Validator:
             return None, [f"invalid JSON: {exc.msg} (position {exc.pos})"]
         errors = schema_errors(self.schema, value)
         return (None, errors) if errors else (value, [])
-
-
-def schema_errors(schema: dict[str, Any], value: Any) -> list[str]:
-    """Readable JSON Schema violations of `value`, at most MAX_ERRORS_SHOWN."""
-    validator = jsonschema.Draft202012Validator(schema)
-    found = sorted(validator.iter_errors(value), key=lambda error: list(error.absolute_path))
-    return [_describe(error) for error in found[:MAX_ERRORS_SHOWN]]
-
-
-def _describe(error: jsonschema.ValidationError) -> str:
-    path = "/".join(str(part) for part in error.absolute_path)
-    return f"{path or '(root)'}: {error.message}"
 
 
 def _validate_model(model: type[BaseModel], raw: str) -> tuple[Any, list[str]]:

@@ -17,7 +17,8 @@ Event payloads (all events also carry `run_id`):
 - approval.resolved: call_id, tool, approved
 - tool.started: call_id, tool, risk, args
 - tool.finished: call_id, tool, is_error, duration_ms, content
-- tool.failed: call_id, tool, error
+- tool.failed: call_id, tool, error ("unknown tool", "invalid arguments", "denied" or the
+  exception)
 - run.completed: session_id, steps, tool_calls
 - run.cancelled: session_id, partial
 - run.failed: session_id, error_type, error
@@ -47,6 +48,7 @@ from sensai.core.events import (
     TOOL_STARTED,
     make_event,
 )
+from sensai.core.schema import schema_errors
 from sensai.core.types import (
     ApprovalRequest,
     Chunk,
@@ -250,6 +252,10 @@ class AgentRuntime:
     async def _run_allowed(
         self, ctx: RunContext, call_id: str, tool: Tool, call: ToolCall
     ) -> ToolResult:
+        errors = schema_errors(tool.parameters, call.args)
+        if errors:
+            self._emit_tool(TOOL_FAILED, ctx, call_id, tool.name, error="invalid arguments")
+            return _error(_invalid_arguments(tool.name, errors))
         refusal = await self._check_policy(ctx, call_id, tool, call)
         if refusal is not None:
             return refusal
@@ -343,6 +349,11 @@ def _limit_error(maximum: int, unit: str) -> RunLimitError:
 
 def _error(message: str) -> ToolResult:
     return ToolResult(message, is_error=True)
+
+
+def _invalid_arguments(tool_name: str, errors: list[str]) -> str:
+    listed = "\n".join(f"- {error}" for error in errors)
+    return f"Invalid arguments for {tool_name}:\n{listed}\nFix them and call the tool again."
 
 
 def _tool_message(name: str, result: ToolResult) -> Message:
