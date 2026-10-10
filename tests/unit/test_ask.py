@@ -5,10 +5,10 @@ import sqlite3
 import pytest
 from rich.console import Console
 
-from sensai.cli.ask import run_ask
+from sensai.cli.ask import load_schema, run_ask
 from sensai.cli.main import build_parser
 from sensai.cli.terminal import Terminal
-from sensai.core.config import load_config
+from sensai.core.config import DEFAULT_CONFIG_PATH, load_config
 from sensai.core.errors import ModelConnectionError
 from sensai.core.fakes import FakeModelGateway
 from sensai.core.types import Chunk, Usage
@@ -130,3 +130,10 @@ def test_the_parser_requires_a_schema_and_joins_the_question():
     )
     with pytest.raises(SystemExit):
         build_parser().parse_args(["ask", "question"])
+
+
+def test_the_example_schemas_are_valid():
+    schemas = sorted((DEFAULT_CONFIG_PATH.parent / "schemas").glob("*.json"))
+    assert schemas
+    for path in schemas:
+        load_schema(path)

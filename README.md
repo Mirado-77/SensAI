@@ -43,12 +43,36 @@ sensai> Phil
 | `Ctrl-C` during an answer | stops the generation and returns to the prompt; the text received so far is kept in the history |
 | `/exit`, `/quit`, `Ctrl-D` or `Ctrl-C` at the prompt | quit |
 
-Options of `sensai chat`:
+Options of `sensai chat` (also accepted by `sensai ask`):
 
 | Option | Effect |
 |---|---|
 | `--model NAME` | Ollama model to use, overriding the configuration |
 | `--config FILE` | TOML file that overrides `configs/default.toml`; it only lists the keys to change |
+
+### Structured answers: `sensai ask`
+
+`sensai ask --schema FILE QUESTION` asks one question and prints a JSON answer that conforms to
+the JSON Schema in `FILE`, on stdout only, so it can feed another tool. Pass `-` as the question
+to read it from stdin. Example (the exact answer depends on the model):
+
+```text
+$ sensai ask --schema configs/schemas/bug_report.json "calc.py sums range(1, n): why is total(3) 3?"
+{
+  "file": "calc.py",
+  "cause": "range(1, n) stops before n, so the last value is never added",
+  "fix": "use range(1, n + 1)",
+  "severity": "medium"
+}
+```
+
+The schema is sent to Ollama (`format`) and the answer is validated. A non-conforming answer is
+sent back to the model with the validation errors for one repair attempt (`[structured]
+max_repairs`). Exit codes: 0 success, 1 model failure or answer still invalid, 2 unusable schema
+or configuration.
+
+The same validation protects tools: arguments that do not match a tool's JSON Schema are never
+executed nor submitted for approval; the model gets the errors back and can correct its call.
 
 Errors are shown without a stack trace and the chat stays open: Ollama not running, model not
 installed, a limit reached (steps, tool calls, tokens, time).
@@ -67,6 +91,7 @@ name = "llama3.2:3b"
 |---|---|---|
 | `[model]` | `name`, `host`, `timeout_s` | Ollama model, server address, maximum time without a response |
 | `[runtime]` | `max_steps`, `max_tool_calls`, `timeout_s`, `max_tokens` | Limits of one turn |
+| `[structured]` | `max_repairs` | Repair attempts when a structured answer does not match its schema (0 to 3) |
 | `[storage]` | `db_path` | sqlite database holding sessions, messages and the event journal |
 | `[policy]` | `read`, `write`, `exec` | Before a tool runs: `allow`, `ask` (user approval) or `deny` |
 
@@ -107,14 +132,14 @@ file, one migration per pull request. Migrations are applied when the database i
 ## Repository layout
 
 - `src/sensai/core/`: types, events, contracts, config, event bus, runtime, fakes. Never imports `cli` or `api`.
-- `src/sensai/model/`: `OllamaGateway`.
+- `src/sensai/model/`: `OllamaGateway`, structured output (`structured.py`).
 - `src/sensai/tools/`: tool registry.
 - `src/sensai/safety/`: approval policy, untrusted content marking.
 - `src/sensai/memory/`: sqlite `SessionStore`.
 - `src/sensai/observability/`: sqlite event journal.
 - `src/sensai/db/`: connection and migrations.
 - `src/sensai/cli/`: chat loop, console rendering, approval prompt.
-- `configs/`: TOML configuration (`default.toml`, profiles, personas, policies).
+- `configs/`: TOML configuration (`default.toml`, profiles, personas, policies) and example JSON Schemas (`schemas/`).
 - `docker/ollama/`: Dockerfile and launch script for the Ollama server.
 - `tests/{unit,contract,integration,fixtures}/`: tests.
 - `docs/user-stories/`: user stories, one file per feature, plus `_template.md`.
@@ -124,6 +149,7 @@ file, one migration per pull request. Migrations are applied when the database i
 | ID | Feature | Status |
 |---|---|---|
 | B1 | Streaming CLI chat with in-session history, clean error handling, selectable model | done ([user stories](docs/user-stories/B1.md)) |
+| T5 | Structured output: JSON validated against a schema with one repair attempt (`sensai ask --schema`), tool arguments validated before any execution | done ([user stories](docs/user-stories/T5.md)) |
 
 Foundations already in place for the next features: the tool-call path of the agent loop
 (registry, approval by risk level, untrusted content marking), the event journal, and the
