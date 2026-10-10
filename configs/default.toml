@@ -26,3 +26,23 @@ db_path = "~/.sensai/sensai.db"
 read = "allow"
 write = "ask"
 exec = "ask"
+
+[mcp]
+# MCP servers (T1), launched over stdio when the chat starts. A server that fails to start is
+# reported and skipped. `risk`: "read", "write", "exec" (the policy above applies) or "auto"
+# (the server's readOnlyHint decides between "read" and "exec").
+timeout_s = 30  # maximum time for one MCP request
+
+# Our own server: Python code navigation inside one root.
+# [[mcp.servers]]
+# name = "code"
+# command = "sensai-mcp"
+# args = ["--root", "demo-repo"]
+# risk = "read"
+
+# An existing server: git history of the demo repository (requires uv).
+# [[mcp.servers]]
+# name = "git"
+# command = "uvx"
+# args = ["mcp-server-git", "--repository", "demo-repo"]
+# risk = "auto"
