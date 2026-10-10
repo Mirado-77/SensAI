@@ -33,6 +33,10 @@ class RuntimeConfig(_Section):
     max_tokens: int = Field(gt=0)
 
 
+class StructuredConfig(_Section):
+    max_repairs: int = Field(ge=0, le=3)
+
+
 class StorageConfig(_Section):
     db_path: Path
 
@@ -46,6 +50,7 @@ class PolicyConfig(_Section):
 class Config(_Section):
     model: ModelConfig
     runtime: RuntimeConfig
+    structured: StructuredConfig
     storage: StorageConfig
     policy: PolicyConfig
 
