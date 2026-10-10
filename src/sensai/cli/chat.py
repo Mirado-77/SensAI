@@ -21,9 +21,11 @@ from sensai.memory.sqlite_store import SqliteSessionStore
 from sensai.model.ollama import OllamaGateway
 from sensai.observability.journal import SqliteEventJournal
 from sensai.safety.policy import ApprovalPolicy
+from sensai.tools.mcp.servers import McpServers
 from sensai.tools.registry import ToolRegistry
 
 EXIT_COMMANDS = {"/exit", "/quit"}
+TOOLS_COMMAND = "/tools"
 
 
 class _SigintCanceller:
@@ -64,7 +66,12 @@ async def run_interruptible(turn: Awaitable[RunResult]) -> RunResult | None:
             return None
 
 
-async def chat_loop(runtime: AgentRuntime, session_id: str, terminal: Terminal) -> None:
+async def chat_loop(
+    runtime: AgentRuntime,
+    session_id: str,
+    terminal: Terminal,
+    registry: ToolRegistry | None = None,
+) -> None:
     """Read lines and run one turn per line, until /exit, Ctrl-D or Ctrl-C at the prompt."""
     while True:
         try:
@@ -74,8 +81,23 @@ async def chat_loop(runtime: AgentRuntime, session_id: str, terminal: Terminal) 
             return
         if text in EXIT_COMMANDS:
             return
-        if text:
+        if text == TOOLS_COMMAND:
+            print_tools(terminal, registry)
+        elif text:
             await run_interruptible(runtime.run_turn(session_id, text))
+
+
+def print_tools(terminal: Terminal, registry: ToolRegistry | None) -> None:
+    """List the tools the model can call, with their risk level (T1)."""
+    tools = registry.tools() if registry is not None else []
+    if not tools:
+        terminal.console.print(Text("No tool available.", "dim"))
+        return
+    for tool in tools:
+        line = Text(f"{tool.name} ", "bold")
+        line.append(f"[{tool.risk}] ", "yellow")
+        line.append(tool.description.splitlines()[0] if tool.description else "")
+        terminal.console.print(line)
 
 
 async def run_chat(config: Config, terminal: Terminal, gateway: ModelGateway | None = None) -> int:
@@ -84,14 +106,34 @@ async def run_chat(config: Config, terminal: Terminal, gateway: ModelGateway | N
     if connection is None:
         return 2
     try:
-        deps = _build_deps(config, terminal, connection, gateway)
-        runtime = AgentRuntime(deps, config.runtime, config.model.name)
-        banner = f"SENSAI | model: {config.model.name} | /exit or Ctrl-D to quit"
-        terminal.console.print(Text(banner, "dim"))
-        await chat_loop(runtime, deps.store.create_session(), terminal)
+        async with McpServers(config.mcp) as mcp:
+            registry = build_registry(mcp, terminal)
+            deps = _build_deps(config, terminal, connection, gateway, registry)
+            runtime = AgentRuntime(deps, config.runtime, config.model.name)
+            terminal.console.print(Text(_banner(config, registry), "dim"))
+            await chat_loop(runtime, deps.store.create_session(), terminal, registry)
         return 0
     finally:
         connection.close()
+
+
+def build_registry(mcp: McpServers, terminal: Terminal) -> ToolRegistry:
+    """Register the MCP tools. A server or tool that cannot be used is reported, not fatal."""
+    registry = ToolRegistry()
+    warnings = list(mcp.warnings)
+    for tool in mcp.tools:
+        try:
+            registry.register(tool)
+        except ValueError as exc:
+            warnings.append(str(exc))
+    for warning in warnings:
+        terminal.errors.print(Text(f"Attention : {warning}", style="yellow"))
+    return registry
+
+
+def _banner(config: Config, registry: ToolRegistry) -> str:
+    tools = f"{len(registry)} tools ({TOOLS_COMMAND})" if len(registry) else "no tools"
+    return f"SENSAI | model: {config.model.name} | {tools} | /exit or Ctrl-D to quit"
 
 
 def _open_database(config: Config, terminal: Terminal) -> sqlite3.Connection | None:
@@ -108,6 +150,7 @@ def _build_deps(
     terminal: Terminal,
     connection: sqlite3.Connection,
     gateway: ModelGateway | None,
+    registry: ToolRegistry,
 ) -> RuntimeDeps:
     model = config.model
     return RuntimeDeps(
@@ -115,6 +158,6 @@ def _build_deps(
         store=SqliteSessionStore(connection),
         sink=EventBus([SqliteEventJournal(connection), ConsoleRenderer(terminal)]),
         channel=CliUserChannel(terminal),
-        registry=ToolRegistry(),
+        registry=registry,
         policy=ApprovalPolicy.from_config(config.policy),
     )
