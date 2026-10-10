@@ -40,9 +40,10 @@ timeout_s = 30  # maximum time for one MCP request
 # args = ["--root", "demo-repo"]
 # risk = "read"
 
-# An existing server: git history of the demo repository (requires uv).
+# An existing server: the official filesystem server, limited to the demo repository
+# (requires Node.js; tested in tests/integration/test_mcp_existing_server.py).
 # [[mcp.servers]]
-# name = "git"
-# command = "uvx"
-# args = ["mcp-server-git", "--repository", "demo-repo"]
+# name = "fs"
+# command = "npx"
+# args = ["-y", "@modelcontextprotocol/server-filesystem@2026.8.31", "demo-repo"]
 # risk = "auto"
