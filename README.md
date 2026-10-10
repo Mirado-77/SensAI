@@ -41,6 +41,7 @@ sensai> Phil
 | a line of text | one turn: the answer streams as the model produces it |
 | an empty line | ignored, the model is not called |
 | `Ctrl-C` during an answer | stops the generation and returns to the prompt; the text received so far is kept in the history |
+| `/tools` | list the tools the model can call, with their risk level |
 | `/exit`, `/quit`, `Ctrl-D` or `Ctrl-C` at the prompt | quit |
 
 Options of `sensai chat` (also accepted by `sensai ask`):
@@ -74,6 +75,33 @@ or configuration.
 The same validation protects tools: arguments that do not match a tool's JSON Schema are never
 executed nor submitted for approval; the model gets the errors back and can correct its call.
 
+### Tools from MCP servers
+
+The model can call tools served over MCP (stdio). Declare servers in a `--config` file:
+
+```toml
+[[mcp.servers]]
+name = "code"                     # tools are named code__<tool>
+command = "sensai-mcp"            # our own server, installed with SENSAI
+args = ["--root", "demo-repo"]
+risk = "read"
+
+[[mcp.servers]]
+name = "fs"                       # an existing server: the official filesystem server
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-filesystem@2026.8.31", "demo-repo"]
+risk = "auto"                     # readOnlyHint decides between read and exec
+```
+
+`sensai-mcp --root DIR` serves two read-only tools on the Python files under `DIR`:
+`python_symbols` (classes, functions and methods of a file, with line numbers) and
+`find_references` (lines that mention an identifier). Paths that leave `DIR` are refused.
+
+MCP tools go through the same path as native tools: argument validation, approval policy by risk
+level, event journal. Their output is marked as untrusted data. A server that fails to start is
+reported and skipped; a server that crashes or stops answering (`[mcp] timeout_s`) turns into a
+tool error the model sees.
+
 Errors are shown without a stack trace and the chat stays open: Ollama not running, model not
 installed, a limit reached (steps, tool calls, tokens, time).
 
@@ -92,6 +120,7 @@ name = "llama3.2:3b"
 | `[model]` | `name`, `host`, `timeout_s` | Ollama model, server address, maximum time without a response |
 | `[runtime]` | `max_steps`, `max_tool_calls`, `timeout_s`, `max_tokens` | Limits of one turn |
 | `[structured]` | `max_repairs` | Repair attempts when a structured answer does not match its schema (0 to 3) |
+| `[mcp]` | `timeout_s`, `[[mcp.servers]]` | Maximum time of one MCP request; MCP servers: `name`, `command`, `args`, `env`, `cwd`, `enabled`, `risk` (`read`, `write`, `exec` or `auto`) |
 | `[storage]` | `db_path` | sqlite database holding sessions, messages and the event journal |
 | `[policy]` | `read`, `write`, `exec` | Before a tool runs: `allow`, `ask` (user approval) or `deny` |
 
@@ -133,7 +162,8 @@ file, one migration per pull request. Migrations are applied when the database i
 
 - `src/sensai/core/`: types, events, contracts, config, event bus, runtime, fakes. Never imports `cli` or `api`.
 - `src/sensai/model/`: `OllamaGateway`, structured output (`structured.py`).
-- `src/sensai/tools/`: tool registry.
+- `src/sensai/tools/`: tool registry, MCP client and adapter (`mcp/`).
+- `src/sensai/mcp_server/`: `sensai-mcp`, our own MCP server.
 - `src/sensai/safety/`: approval policy, untrusted content marking.
 - `src/sensai/memory/`: sqlite `SessionStore`.
 - `src/sensai/observability/`: sqlite event journal.
@@ -149,8 +179,9 @@ file, one migration per pull request. Migrations are applied when the database i
 | ID | Feature | Status |
 |---|---|---|
 | B1 | Streaming CLI chat with in-session history, clean error handling, selectable model | done ([user stories](docs/user-stories/B1.md)) |
+| T1 | MCP: hand-written stdio client, our own server `sensai-mcp`, existing servers by configuration, same permissions as native tools | done ([user stories](docs/user-stories/T1.md)) |
 | T5 | Structured output: JSON validated against a schema with one repair attempt (`sensai ask --schema`), tool arguments validated before any execution | done ([user stories](docs/user-stories/T5.md)) |
 
 Foundations already in place for the next features: the tool-call path of the agent loop
 (registry, approval by risk level, untrusted content marking), the event journal, and the
-message tree of the session store. No tool is registered yet.
+message tree of the session store.
