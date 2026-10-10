@@ -20,6 +20,7 @@ dev = [
 
 [project.scripts]
 sensai = "sensai.cli.main:main"
+sensai-mcp = "sensai.mcp_server.main:main"
 
 [tool.setuptools.dynamic]
 dependencies = { file = ["requirements.txt"] }
