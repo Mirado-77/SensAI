@@ -59,6 +59,8 @@ def test_initial_vocabulary_is_complete():
         "tool.failed",
         "approval.requested",
         "approval.resolved",
+        "structured.repaired",
+        "structured.failed",
     }
     assert RESERVED_EVENT_TYPES == {
         "question.requested",

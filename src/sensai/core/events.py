@@ -16,6 +16,8 @@ TOOL_FINISHED = "tool.finished"
 TOOL_FAILED = "tool.failed"
 APPROVAL_REQUESTED = "approval.requested"
 APPROVAL_RESOLVED = "approval.resolved"
+STRUCTURED_REPAIRED = "structured.repaired"
+STRUCTURED_FAILED = "structured.failed"
 
 EVENT_TYPES = frozenset(
     {
@@ -31,6 +33,8 @@ EVENT_TYPES = frozenset(
         TOOL_FAILED,
         APPROVAL_REQUESTED,
         APPROVAL_RESOLVED,
+        STRUCTURED_REPAIRED,
+        STRUCTURED_FAILED,
     }
 )
 
