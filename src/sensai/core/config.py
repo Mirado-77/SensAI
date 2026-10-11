@@ -1,7 +1,7 @@
 """Loading and validation of the TOML configuration."""
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
@@ -43,11 +43,24 @@ class PolicyConfig(_Section):
     exec: Decision
 
 
+class AllowedRoot(_Section):
+    path: Path
+    mode: Literal["read", "write"]
+
+
+class FilesConfig(_Section):
+    max_read_bytes: int = Field(gt=0)
+    max_write_bytes: int = Field(gt=0)
+    max_list_entries: int = Field(gt=0)
+    allowed_roots: list[AllowedRoot] = Field(default_factory=list)
+
+
 class Config(_Section):
     model: ModelConfig
     runtime: RuntimeConfig
     storage: StorageConfig
     policy: PolicyConfig
+    files: FilesConfig
 
 
 def _read_toml(path: Path) -> dict[str, Any]:

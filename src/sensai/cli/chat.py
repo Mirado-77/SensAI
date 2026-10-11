@@ -14,14 +14,14 @@ from sensai.cli.terminal import Terminal
 from sensai.core.bus import EventBus
 from sensai.core.config import Config
 from sensai.core.contracts import ModelGateway
-from sensai.core.errors import SensaiError
+from sensai.core.errors import ConfigError, SensaiError
 from sensai.core.runtime import AgentRuntime, RunResult, RuntimeDeps
 from sensai.db.connection import connect
 from sensai.memory.sqlite_store import SqliteSessionStore
 from sensai.model.ollama import OllamaGateway
 from sensai.observability.journal import SqliteEventJournal
 from sensai.safety.policy import ApprovalPolicy
-from sensai.tools.registry import ToolRegistry
+from sensai.tools import build_registry
 
 EXIT_COMMANDS = {"/exit", "/quit"}
 
@@ -84,7 +84,9 @@ async def run_chat(config: Config, terminal: Terminal, gateway: ModelGateway | N
     if connection is None:
         return 2
     try:
-        deps = _build_deps(config, terminal, connection, gateway)
+        deps = _build_deps_or_report(config, terminal, connection, gateway)
+        if deps is None:
+            return 2
         runtime = AgentRuntime(deps, config.runtime, config.model.name)
         banner = f"SENSAI | model: {config.model.name} | /exit or Ctrl-D to quit"
         terminal.console.print(Text(banner, "dim"))
@@ -103,6 +105,19 @@ def _open_database(config: Config, terminal: Terminal) -> sqlite3.Connection | N
         return None
 
 
+def _build_deps_or_report(
+    config: Config,
+    terminal: Terminal,
+    connection: sqlite3.Connection,
+    gateway: ModelGateway | None,
+) -> RuntimeDeps | None:
+    try:
+        return _build_deps(config, terminal, connection, gateway)
+    except ConfigError as exc:
+        terminal.errors.print(Text(f"Erreur : {exc}", style="bold red"))
+        return None
+
+
 def _build_deps(
     config: Config,
     terminal: Terminal,
@@ -115,6 +130,6 @@ def _build_deps(
         store=SqliteSessionStore(connection),
         sink=EventBus([SqliteEventJournal(connection), ConsoleRenderer(terminal)]),
         channel=CliUserChannel(terminal),
-        registry=ToolRegistry(),
+        registry=build_registry(config),
         policy=ApprovalPolicy.from_config(config.policy),
     )
