@@ -20,9 +20,9 @@ def test_the_registry_is_empty_without_an_allowed_root():
     assert len(registry) == 0
 
 
-def test_the_registry_offers_read_file_when_a_root_is_configured(tmp_path):
+def test_the_registry_offers_the_file_tools_when_a_root_is_configured(tmp_path):
     registry = build_registry(config_with_root(tmp_path))
-    assert [spec.name for spec in registry.specs()] == ["read_file"]
+    assert sorted(spec.name for spec in registry.specs()) == ["list_dir", "read_file"]
 
 
 def test_a_missing_root_is_rejected(tmp_path):

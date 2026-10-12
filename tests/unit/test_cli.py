@@ -290,7 +290,7 @@ async def test_the_model_can_read_a_file_under_an_allowed_root(tmp_path):
     gateway = FakeModelGateway([ToolCall("read_file", {"path": "a.txt"})], [Chunk("done")])
     assert await run_chat(config, terminal, gateway) == 0
 
-    assert [spec.name for spec in gateway.calls[0].tools] == ["read_file"]
+    assert sorted(spec.name for spec in gateway.calls[0].tools) == ["list_dir", "read_file"]
     tool_message = gateway.calls[1].messages[-1]
     assert tool_message.role == "tool"
     assert "hello" in tool_message.content
