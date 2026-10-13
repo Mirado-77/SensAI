@@ -378,3 +378,37 @@ async def test_hooks_run_in_registration_order():
     s.runtime.exit_hooks.extend([hook("exit 1"), hook("exit 2")])
     await s.runtime.run_turn(s.session_id, "hi")
     assert order == ["entry 1", "entry 2", "exit 1", "exit 2"]
+
+
+PATH_SCHEMA = {
+    "type": "object",
+    "properties": {"path": {"type": "string"}},
+    "required": ["path"],
+    "additionalProperties": False,
+}
+
+
+@pytest.mark.feature("T5")
+async def test_invalid_tool_arguments_are_sent_back_to_the_model_without_running():
+    tool = FakeTool(name="read_file", parameters=PATH_SCHEMA)
+    bad_call = ToolCall("read_file", {"file": "a.py"})
+    s = build([bad_call], [READ_CALL], [Chunk("done")], tools=[tool])
+    result = await s.runtime.run_turn(s.session_id, "Read a.py")
+
+    assert result.status == "completed"
+    assert [args for args, _ in tool.calls] == [{"path": "a.py"}]
+    failed = events_of(s, "tool.failed")[0].payload
+    assert (failed["tool"], failed["error"]) == ("read_file", "invalid arguments")
+    feedback = s.gateway.calls[1].messages[-1].content
+    assert feedback.startswith("Invalid arguments for read_file:")
+    assert "'path' is a required property" in feedback
+    assert "Fix them and call the tool again." in feedback
+
+
+@pytest.mark.feature("T5")
+async def test_invalid_arguments_are_checked_before_asking_the_user():
+    tool = FakeTool(name="write_file", risk="write", parameters=PATH_SCHEMA)
+    s = build([ToolCall("write_file", {"path": 3})], [Chunk("ok")], tools=[tool])
+    await s.runtime.run_turn(s.session_id, "Write")
+    assert s.channel.confirm_requests == []
+    assert tool.calls == []

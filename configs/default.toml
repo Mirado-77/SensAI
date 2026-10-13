@@ -14,6 +14,10 @@ max_tool_calls = 8
 timeout_s = 300
 max_tokens = 32768  # cumulative tokens (prompt + completion) over one turn
 
+[structured]
+# Structured output (T5): repair attempts when the JSON does not match the schema.
+max_repairs = 1
+
 [storage]
 db_path = "~/.sensai/sensai.db"
 
@@ -28,3 +32,24 @@ max_read_bytes = 65536
 max_write_bytes = 1048576
 max_list_entries = 200
 allowed_roots = []
+
+[mcp]
+# MCP servers (T1), launched over stdio when the chat starts. A server that fails to start is
+# reported and skipped. `risk`: "read", "write", "exec" (the policy above applies) or "auto"
+# (the server's readOnlyHint decides between "read" and "exec").
+timeout_s = 30  # maximum time for one MCP request
+
+# Our own server: Python code navigation inside one root.
+# [[mcp.servers]]
+# name = "code"
+# command = "sensai-mcp"
+# args = ["--root", "demo-repo"]
+# risk = "read"
+
+# An existing server: the official filesystem server, limited to the demo repository
+# (requires Node.js; tested in tests/integration/test_mcp_existing_server.py).
+# [[mcp.servers]]
+# name = "fs"
+# command = "npx"
+# args = ["-y", "@modelcontextprotocol/server-filesystem@2026.8.31", "demo-repo"]
+# risk = "auto"

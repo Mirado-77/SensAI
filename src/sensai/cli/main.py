@@ -4,14 +4,17 @@ import argparse
 import asyncio
 import contextlib
 import signal
-from collections.abc import Sequence
+import sys
+from collections.abc import Coroutine, Sequence
 from pathlib import Path
 from types import FrameType
+from typing import Any
 
 from rich.console import Console
 from rich.text import Text
 
-from sensai.cli.chat import run_chat
+from sensai.cli.ask import run_ask
+from sensai.cli.chat import LAST_SESSION, print_sessions, run_chat
 from sensai.cli.terminal import Terminal
 from sensai.core.config import Config, load_config
 from sensai.core.errors import ConfigError
@@ -26,9 +29,28 @@ def build_parser() -> argparse.ArgumentParser:
     )
     commands = parser.add_subparsers(dest="command", required=True)
     chat = commands.add_parser("chat", help="start an interactive chat")
-    chat.add_argument("--model", help="Ollama model to use (overrides the configuration)")
-    chat.add_argument("--config", type=Path, help="TOML file overriding configs/default.toml")
+    _add_common_options(chat)
+    chat.add_argument(
+        "--resume",
+        nargs="?",
+        const=LAST_SESSION,
+        metavar="ID",
+        help="continue a saved session (the most recent one without ID; an id prefix is enough)",
+    )
+    sessions = commands.add_parser("sessions", help="list the saved sessions")
+    _add_common_options(sessions)
+    ask = commands.add_parser(
+        "ask", help="answer one question with JSON conforming to a schema (stdout)"
+    )
+    _add_common_options(ask)
+    ask.add_argument("--schema", type=Path, required=True, help="JSON Schema file of the answer")
+    ask.add_argument("question", nargs="+", help="the question, or - to read it from stdin")
     return parser
+
+
+def _add_common_options(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--model", help="Ollama model to use (overrides the configuration)")
+    parser.add_argument("--config", type=Path, help="TOML file overriding configs/default.toml")
 
 
 def config_from_args(args: argparse.Namespace) -> Config:
@@ -44,11 +66,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     except ConfigError as exc:
         terminal.errors.print(Text(f"Erreur : {exc}", style="bold red"))
         return 2
-    return _run(config, terminal)
+    if args.command == "ask":
+        return _run(run_ask(config, terminal, args.schema, _question(args.question)), terminal)
+    if args.command == "sessions":
+        return print_sessions(config, terminal)
+    return _run(run_chat(config, terminal, resume=args.resume), terminal)
 
 
-def _run(config: Config, terminal: Terminal) -> int:
-    """Run the chat and return the exit code.
+def _question(words: list[str]) -> str:
+    return sys.stdin.read() if words == ["-"] else " ".join(words)
+
+
+def _run(command: Coroutine[Any, Any, int], terminal: Terminal) -> int:
+    """Run a command and return its exit code.
 
     asyncio.run installs its own SIGINT handler unless a custom one is set. That handler would
     swallow Ctrl-C while input() is waiting at the prompt, so a handler that raises
@@ -56,7 +86,7 @@ def _run(config: Config, terminal: Terminal) -> int:
     """
     previous_handler = signal.signal(signal.SIGINT, _raise_keyboard_interrupt)
     try:
-        return asyncio.run(run_chat(config, terminal))
+        return asyncio.run(command)
     except KeyboardInterrupt:
         terminal.console.print()
         return 130

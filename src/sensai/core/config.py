@@ -6,7 +6,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from sensai.core.errors import ConfigError
-from sensai.core.types import Decision
+from sensai.core.types import Decision, Risk
 
 try:
     import tomllib
@@ -33,6 +33,10 @@ class RuntimeConfig(_Section):
     max_tokens: int = Field(gt=0)
 
 
+class StructuredConfig(_Section):
+    max_repairs: int = Field(ge=0, le=3)
+
+
 class StorageConfig(_Section):
     db_path: Path
 
@@ -55,12 +59,31 @@ class FilesConfig(_Section):
     allowed_roots: list[AllowedRoot] = Field(default_factory=list)
 
 
+class McpServerConfig(_Section):
+    """One MCP server launched over stdio (T1). Its tools are named `<name>__<tool>`."""
+
+    name: str = Field(pattern=r"^[A-Za-z0-9_-]+$")
+    command: str = Field(min_length=1)
+    args: list[str] = []
+    env: dict[str, str] = {}
+    cwd: Path | None = None
+    enabled: bool = True
+    risk: Risk | Literal["auto"] = "exec"
+
+
+class McpConfig(_Section):
+    timeout_s: float = Field(gt=0)
+    servers: list[McpServerConfig] = []
+
+
 class Config(_Section):
     model: ModelConfig
     runtime: RuntimeConfig
+    structured: StructuredConfig
     storage: StorageConfig
     policy: PolicyConfig
     files: FilesConfig
+    mcp: McpConfig
 
 
 def _read_toml(path: Path) -> dict[str, Any]:
