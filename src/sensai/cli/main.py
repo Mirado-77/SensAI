@@ -14,7 +14,7 @@ from rich.console import Console
 from rich.text import Text
 
 from sensai.cli.ask import run_ask
-from sensai.cli.chat import run_chat
+from sensai.cli.chat import LAST_SESSION, print_sessions, run_chat
 from sensai.cli.terminal import Terminal
 from sensai.core.config import Config, load_config
 from sensai.core.errors import ConfigError
@@ -30,6 +30,15 @@ def build_parser() -> argparse.ArgumentParser:
     commands = parser.add_subparsers(dest="command", required=True)
     chat = commands.add_parser("chat", help="start an interactive chat")
     _add_common_options(chat)
+    chat.add_argument(
+        "--resume",
+        nargs="?",
+        const=LAST_SESSION,
+        metavar="ID",
+        help="continue a saved session (the most recent one without ID; an id prefix is enough)",
+    )
+    sessions = commands.add_parser("sessions", help="list the saved sessions")
+    _add_common_options(sessions)
     ask = commands.add_parser(
         "ask", help="answer one question with JSON conforming to a schema (stdout)"
     )
@@ -59,7 +68,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
     if args.command == "ask":
         return _run(run_ask(config, terminal, args.schema, _question(args.question)), terminal)
-    return _run(run_chat(config, terminal), terminal)
+    if args.command == "sessions":
+        return print_sessions(config, terminal)
+    return _run(run_chat(config, terminal, resume=args.resume), terminal)
 
 
 def _question(words: list[str]) -> str:

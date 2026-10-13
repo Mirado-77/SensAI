@@ -121,7 +121,7 @@ class AgentRuntime:
         self._deps = deps
         self._config = config
         self._model_name = model_name
-        self._system_prompt = system_prompt
+        self.system_prompt = system_prompt
         self.entry_hooks: list[Hook] = []
         self.exit_hooks: list[Hook] = []
 
@@ -166,7 +166,7 @@ class AgentRuntime:
         return ctx.answer
 
     def _build_context(self, ctx: RunContext, state: _RunState) -> None:
-        prefix = [Message("system", self._system_prompt)] if self._system_prompt else []
+        prefix = [Message("system", self.system_prompt)] if self.system_prompt else []
         user_message = Message("user", ctx.user_text)
         history = self._deps.store.history(ctx.session_id)
         ctx.messages = [*prefix, *history, user_message]
