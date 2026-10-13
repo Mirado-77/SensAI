@@ -31,7 +31,7 @@ from sensai.core.events import (
 )
 from sensai.core.fakes import FakeModelGateway
 from sensai.core.runtime import RunResult
-from sensai.core.types import ApprovalRequest, Chunk, Usage
+from sensai.core.types import ApprovalRequest, Chunk, ToolCall, Usage
 from sensai.db.connection import connect
 from sensai.memory.sqlite_store import SqliteSessionStore
 
@@ -266,6 +266,44 @@ async def test_an_unusable_database_ends_with_exit_code_2(tmp_path):
     code = await run_chat(config, terminal, FakeModelGateway())
     assert code == 2
     assert "base de données" in err.getvalue()
+
+
+def read_root_override(root):
+    return {"allowed_roots": [{"path": str(root), "mode": "read"}]}
+
+
+@pytest.mark.feature("T4")
+async def test_a_missing_allowed_root_ends_with_exit_code_2(tmp_path):
+    files = read_root_override(tmp_path / "missing")
+    config, terminal, _, err = chat_setup(tmp_path, files=files)
+    code = await run_chat(config, terminal, FakeModelGateway())
+    assert code == 2
+    assert "Erreur : Racine autorisée introuvable" in err.getvalue()
+
+
+@pytest.mark.feature("T4")
+async def test_the_model_can_read_a_file_under_an_allowed_root(tmp_path):
+    root = tmp_path / "root"
+    root.mkdir()
+    (root / "a.txt").write_text("hello", encoding="utf-8")
+    config, terminal, _, _ = chat_setup(tmp_path, "read it", files=read_root_override(root))
+    gateway = FakeModelGateway([ToolCall("read_file", {"path": "a.txt"})], [Chunk("done")])
+    assert await run_chat(config, terminal, gateway) == 0
+
+    offered = sorted(spec.name for spec in gateway.calls[0].tools)
+    assert offered == ["edit_file", "list_dir", "read_file", "write_file"]
+    tool_message = gateway.calls[1].messages[-1]
+    assert tool_message.role == "tool"
+    assert "hello" in tool_message.content
+    assert "<untrusted_content>" in tool_message.content
+
+
+@pytest.mark.feature("T4")
+async def test_no_tool_is_offered_without_an_allowed_root(tmp_path):
+    config, terminal, _, _ = chat_setup(tmp_path, "hi")
+    gateway = FakeModelGateway([Chunk("hello")])
+    assert await run_chat(config, terminal, gateway) == 0
+    assert not gateway.calls[0].tools
 
 
 async def test_turns_and_events_are_saved_in_the_database(tmp_path):

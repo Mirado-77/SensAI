@@ -21,14 +21,15 @@ from sensai.cli.render import ConsoleRenderer
 from sensai.cli.terminal import Terminal
 from sensai.core.bus import EventBus
 from sensai.core.config import Config
-from sensai.core.contracts import ModelGateway
-from sensai.core.errors import SensaiError
+from sensai.core.contracts import ModelGateway, Tool
+from sensai.core.errors import ConfigError, SensaiError
 from sensai.core.runtime import AgentRuntime, RunResult, RuntimeDeps
 from sensai.db.connection import connect
 from sensai.memory.sqlite_store import SqliteSessionStore
 from sensai.model.ollama import OllamaGateway
 from sensai.observability.journal import SqliteEventJournal
 from sensai.safety.policy import ApprovalPolicy
+from sensai.tools import native_tools
 from sensai.tools.mcp.servers import McpServers
 from sensai.tools.registry import ToolRegistry
 
@@ -131,8 +132,11 @@ async def run_chat(
         session_id = _open_session(store, terminal, resume)
         if session_id is None:
             return 2
+        native = _native_tools_or_report(config, terminal)
+        if native is None:
+            return 2
         async with McpServers(config.mcp) as mcp:
-            registry = build_registry(mcp, terminal)
+            registry = build_registry(native, mcp, terminal)
             deps = _build_deps(config, terminal, connection, gateway, registry)
             prompt = profile_prompt(load_profile(store))
             runtime = AgentRuntime(deps, config.runtime, config.model.name, prompt)
@@ -178,9 +182,9 @@ def print_sessions(config: Config, terminal: Terminal, limit: int = 20) -> int:
     return 0
 
 
-def build_registry(mcp: McpServers, terminal: Terminal) -> ToolRegistry:
-    """Register the MCP tools. A server or tool that cannot be used is reported, not fatal."""
-    registry = ToolRegistry()
+def build_registry(native: list[Tool], mcp: McpServers, terminal: Terminal) -> ToolRegistry:
+    """Register the native tools, then the MCP tools. A tool that cannot be used is reported."""
+    registry = ToolRegistry(native)
     warnings = list(mcp.warnings)
     for tool in mcp.tools:
         try:
@@ -203,6 +207,14 @@ def _open_database(config: Config, terminal: Terminal) -> sqlite3.Connection | N
     except (OSError, sqlite3.Error, SensaiError) as exc:
         message = f"Erreur : base de données inutilisable : {exc}"
         terminal.errors.print(Text(message, style="bold red"))
+        return None
+
+
+def _native_tools_or_report(config: Config, terminal: Terminal) -> list[Tool] | None:
+    try:
+        return native_tools(config)
+    except ConfigError as exc:
+        terminal.errors.print(Text(f"Erreur : {exc}", style="bold red"))
         return None
 
 

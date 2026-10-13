@@ -47,6 +47,18 @@ class PolicyConfig(_Section):
     exec: Decision
 
 
+class AllowedRoot(_Section):
+    path: Path
+    mode: Literal["read", "write"]
+
+
+class FilesConfig(_Section):
+    max_read_bytes: int = Field(gt=0)
+    max_write_bytes: int = Field(gt=0)
+    max_list_entries: int = Field(gt=0)
+    allowed_roots: list[AllowedRoot] = Field(default_factory=list)
+
+
 class McpServerConfig(_Section):
     """One MCP server launched over stdio (T1). Its tools are named `<name>__<tool>`."""
 
@@ -70,6 +82,7 @@ class Config(_Section):
     structured: StructuredConfig
     storage: StorageConfig
     policy: PolicyConfig
+    files: FilesConfig
     mcp: McpConfig
 
 

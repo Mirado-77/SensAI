@@ -27,6 +27,12 @@ read = "allow"
 write = "ask"
 exec = "ask"
 
+[files]
+max_read_bytes = 65536
+max_write_bytes = 1048576
+max_list_entries = 200
+allowed_roots = []
+
 [mcp]
 # MCP servers (T1), launched over stdio when the chat starts. A server that fails to start is
 # reported and skipped. `risk`: "read", "write", "exec" (the policy above applies) or "auto"
