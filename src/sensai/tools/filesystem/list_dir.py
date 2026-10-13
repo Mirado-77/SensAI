@@ -11,8 +11,8 @@ class ListDirTool:
 
     name = "list_dir"
     description = (
-        "List all directories inside a root"
-        "Call it without arguments to list the project root, then explore subfolders."
+        "List all directories inside a root."
+        " Call it without arguments to list the project root, then explore subfolders."
     )
     risk: Risk = "read"
     parameters = {
@@ -21,7 +21,8 @@ class ListDirTool:
             "path": {
                 "type": "string",
                 "description": (
-                    "List the files and subfolders of a folder inside the allowed roots."
+                    "Path of the folder to list. Relative paths start from the first allowed root."
+                    "Omit it to list the first allowed root."
                 ),
             }
         },
