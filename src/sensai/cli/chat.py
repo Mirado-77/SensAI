@@ -4,11 +4,19 @@ import asyncio
 import signal
 import sqlite3
 from collections.abc import Awaitable
+from datetime import datetime
 from typing import Any
 
 from rich.text import Text
 
 from sensai.cli.channel import CliUserChannel
+from sensai.cli.profile import (
+    PROFILE_COMMAND,
+    PROFILE_ID,
+    load_profile,
+    profile_prompt,
+    run_profile_command,
+)
 from sensai.cli.render import ConsoleRenderer
 from sensai.cli.terminal import Terminal
 from sensai.core.bus import EventBus
@@ -26,6 +34,7 @@ from sensai.tools.registry import ToolRegistry
 
 EXIT_COMMANDS = {"/exit", "/quit"}
 TOOLS_COMMAND = "/tools"
+LAST_SESSION = ""
 
 
 class _SigintCanceller:
@@ -70,6 +79,7 @@ async def chat_loop(
     runtime: AgentRuntime,
     session_id: str,
     terminal: Terminal,
+    store: SqliteSessionStore,
     registry: ToolRegistry | None = None,
 ) -> None:
     """Read lines and run one turn per line, until /exit, Ctrl-D or Ctrl-C at the prompt."""
@@ -83,6 +93,8 @@ async def chat_loop(
             return
         if text == TOOLS_COMMAND:
             print_tools(terminal, registry)
+        elif text.split(" ", 1)[0] == PROFILE_COMMAND:
+            runtime.system_prompt = run_profile_command(store, terminal, text)
         elif text:
             await run_interruptible(runtime.run_turn(session_id, text))
 
@@ -100,21 +112,70 @@ def print_tools(terminal: Terminal, registry: ToolRegistry | None) -> None:
         terminal.console.print(line)
 
 
-async def run_chat(config: Config, terminal: Terminal, gateway: ModelGateway | None = None) -> int:
-    """Open the database, build the runtime and chat. Return the process exit code."""
+async def run_chat(
+    config: Config,
+    terminal: Terminal,
+    gateway: ModelGateway | None = None,
+    resume: str | None = None,
+) -> int:
+    """Open the database, build the runtime and chat. Return the process exit code.
+
+    `resume` is the id (or id prefix) of a session to continue, LAST_SESSION for the most
+    recent one, None for a new session.
+    """
     connection = _open_database(config, terminal)
     if connection is None:
         return 2
     try:
+        store = SqliteSessionStore(connection)
+        session_id = _open_session(store, terminal, resume)
+        if session_id is None:
+            return 2
         async with McpServers(config.mcp) as mcp:
             registry = build_registry(mcp, terminal)
             deps = _build_deps(config, terminal, connection, gateway, registry)
-            runtime = AgentRuntime(deps, config.runtime, config.model.name)
+            prompt = profile_prompt(load_profile(store))
+            runtime = AgentRuntime(deps, config.runtime, config.model.name, prompt)
             terminal.console.print(Text(_banner(config, registry), "dim"))
-            await chat_loop(runtime, deps.store.create_session(), terminal, registry)
+            await chat_loop(runtime, session_id, terminal, store, registry)
         return 0
     finally:
         connection.close()
+
+
+def _open_session(store: SqliteSessionStore, terminal: Terminal, resume: str | None) -> str | None:
+    """Return the session to chat in, or None after printing why it cannot be resumed."""
+    if resume is None:
+        return store.create_session(PROFILE_ID)
+    sessions = store.list_sessions(2, resume)
+    if not sessions or (resume and len(sessions) > 1):
+        problem = "ambiguë" if sessions else "introuvable"
+        message = f"session {problem} : {resume}" if resume else "aucune session enregistrée"
+        terminal.errors.print(Text(f"Erreur : {message}", style="bold red"))
+        return None
+    session_id = sessions[0]["id"]
+    count = len(store.history(session_id))
+    terminal.console.print(Text(f"Resumed session {session_id} ({count} messages)", "dim"))
+    return session_id
+
+
+def print_sessions(config: Config, terminal: Terminal, limit: int = 20) -> int:
+    """List the saved sessions, newest first. Return the process exit code."""
+    connection = _open_database(config, terminal)
+    if connection is None:
+        return 2
+    try:
+        sessions = SqliteSessionStore(connection).list_sessions(limit)
+    finally:
+        connection.close()
+    if not sessions:
+        terminal.console.print(Text("No saved session.", "dim"))
+    for row in sessions:
+        line = Text(f"{row['id'][:8]} ", "bold")
+        line.append(datetime.fromtimestamp(row["created_at"]).strftime("%Y-%m-%d %H:%M "), "dim")
+        line.append((row["first_message"] or "").split("\n")[0][:60])
+        terminal.console.print(line)
+    return 0
 
 
 def build_registry(mcp: McpServers, terminal: Terminal) -> ToolRegistry:

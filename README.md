@@ -42,7 +42,15 @@ sensai> Phil
 | an empty line | ignored, the model is not called |
 | `Ctrl-C` during an answer | stops the generation and returns to the prompt; the text received so far is kept in the history |
 | `/tools` | list the tools the model can call, with their risk level |
+| `/profile` | show your profile; `/profile instructions <text>`, `/profile set <key> <value>`, `/profile unset <key>`, `/profile clear` edit it |
 | `/exit`, `/quit`, `Ctrl-D` or `Ctrl-C` at the prompt | quit |
+
+The profile (custom instructions and preferences, e.g. `/profile set language Python`) is saved in
+the database and sent to the model as a system message at every turn, in every session.
+
+Every chat is saved. `sensai sessions` lists them (newest first), and `sensai chat --resume`
+continues the most recent one; `--resume <id>` continues another, the first characters of the
+id are enough.
 
 Options of `sensai chat` (also accepted by `sensai ask`):
 
@@ -50,6 +58,7 @@ Options of `sensai chat` (also accepted by `sensai ask`):
 |---|---|
 | `--model NAME` | Ollama model to use, overriding the configuration |
 | `--config FILE` | TOML file that overrides `configs/default.toml`; it only lists the keys to change |
+| `--resume [ID]` | `chat` only: continue a saved session, the most recent one without `ID` |
 
 ### Structured answers: `sensai ask`
 
@@ -180,6 +189,7 @@ file, one migration per pull request. Migrations are applied when the database i
 |---|---|---|
 | B1 | Streaming CLI chat with in-session history, clean error handling, selectable model | done ([user stories](docs/user-stories/B1.md)) |
 | T1 | MCP: hand-written stdio client, our own server `sensai-mcp`, existing servers by configuration, same permissions as native tools | done ([user stories](docs/user-stories/T1.md)) |
+| M1 | Session persistence and user profile: `sensai sessions`, `sensai chat --resume`, `/profile` sent at every turn | done ([user stories](docs/user-stories/M1.md)) |
 | T5 | Structured output: JSON validated against a schema with one repair attempt (`sensai ask --schema`), tool arguments validated before any execution | done ([user stories](docs/user-stories/T5.md)) |
 
 Foundations already in place for the next features: the tool-call path of the agent loop
