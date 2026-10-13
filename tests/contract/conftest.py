@@ -26,6 +26,7 @@ from sensai.core.types import ModelEvent, Risk
 from sensai.db.connection import connect
 from sensai.memory.sqlite_store import SqliteSessionStore
 from sensai.model.ollama import OllamaGateway
+from sensai.tools.mcp.adapter import McpTool
 
 
 @pytest.fixture(params=["fake", "ollama"])
@@ -96,8 +97,18 @@ def sink_harness(request: pytest.FixtureRequest) -> SinkHarness:
     return SinkHarness(sink, lambda: sink.events)
 
 
-@pytest.fixture(params=["read", "write", "exec"])
+class _StubMcpServer:
+    """Answers `tools/call` like an MCP server would, without a process."""
+
+    async def call_tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        return {"content": [{"type": "text", "text": f"{name} ok"}]}
+
+
+@pytest.fixture(params=["read", "write", "exec", "mcp"])
 def tool(request: pytest.FixtureRequest) -> Tool:
+    if request.param == "mcp":
+        spec = {"name": "echo", "description": "Echo.", "inputSchema": {"type": "object"}}
+        return McpTool("stub", spec, _StubMcpServer(), "auto")
     risk: Risk = request.param
     return FakeTool(risk=risk)
 

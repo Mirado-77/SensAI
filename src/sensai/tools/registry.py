@@ -24,6 +24,9 @@ class ToolRegistry:
     def get(self, name: str) -> Tool | None:
         return self._tools.get(name)
 
+    def tools(self) -> list[Tool]:
+        return list(self._tools.values())
+
     def specs(self) -> list[ToolSpec]:
         return [
             ToolSpec(tool.name, tool.description, tool.parameters) for tool in self._tools.values()
