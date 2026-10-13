@@ -12,3 +12,8 @@ def wrap_untrusted(content: str) -> str:
     """Wrap `content` in tags; any closing tag it contains is neutralized."""
     cleaned = content.replace(_CLOSE_TAG, _CLOSE_TAG.replace("</", "<\\/"))
     return f"{_NOTICE}\n{_OPEN_TAG}\n{cleaned}\n{_CLOSE_TAG}"
+
+
+def contains_untrusted_marker(content: str) -> bool:
+    """Tell whether `content` holds the wrapper added by `wrap_untrusted`."""
+    return any(marker in content for marker in (_OPEN_TAG, _CLOSE_TAG, _NOTICE))
