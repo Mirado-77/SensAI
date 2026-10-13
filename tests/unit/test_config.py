@@ -83,3 +83,15 @@ def test_policy_rejects_an_unknown_decision():
 def test_storage_path_is_a_path():
     config = load_config(overrides={"storage": {"db_path": "/tmp/sensai-test.db"}})
     assert config.storage.db_path == Path("/tmp/sensai-test.db")
+
+
+@pytest.mark.feature("T5")
+def test_structured_output_allows_one_repair_by_default():
+    assert load_config().structured.max_repairs == 1
+
+
+@pytest.mark.feature("T5")
+@pytest.mark.parametrize("value", [-1, 4])
+def test_structured_max_repairs_is_bounded(value):
+    with pytest.raises(ConfigError):
+        load_config(overrides={"structured": {"max_repairs": value}})

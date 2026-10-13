@@ -14,6 +14,10 @@ max_tool_calls = 8
 timeout_s = 300
 max_tokens = 32768  # cumulative tokens (prompt + completion) over one turn
 
+[structured]
+# Structured output (T5): repair attempts when the JSON does not match the schema.
+max_repairs = 1
+
 [storage]
 db_path = "~/.sensai/sensai.db"
 

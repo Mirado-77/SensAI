@@ -27,3 +27,7 @@ class ModelConnectionError(ModelError):
 
 class ModelNotFoundError(ModelError):
     """The requested model is not installed on the Ollama server."""
+
+
+class StructuredOutputError(ModelError):
+    """The model did not produce JSON conforming to the schema, even after repair."""

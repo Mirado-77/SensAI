@@ -1,0 +1,12 @@
+{
+  "type": "object",
+  "properties": {
+    "file": {"type": "string", "description": "file that contains the bug"},
+    "line": {"type": "integer", "minimum": 1},
+    "cause": {"type": "string"},
+    "fix": {"type": "string"},
+    "severity": {"enum": ["low", "medium", "high"]}
+  },
+  "required": ["file", "cause", "fix", "severity"],
+  "additionalProperties": false
+}
