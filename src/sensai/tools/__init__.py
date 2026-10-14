@@ -17,6 +17,6 @@ def native_tools(config: Config) -> list[Tool]:
     return [
         ReadFileTool(guard, files.max_read_bytes),
         ListDirTool(guard, files.max_list_entries),
-        WriteFileTool(guard, files.max_write_bytes),
-        EditFileTool(guard, files.max_write_bytes),
+        WriteFileTool(guard, files.max_write_bytes, files.max_diff_lines),
+        EditFileTool(guard, files.max_write_bytes, files.max_diff_lines),
     ]

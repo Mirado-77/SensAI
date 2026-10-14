@@ -13,6 +13,7 @@ pytestmark = pytest.mark.feature("T4")
 
 CTX = ToolContext(run_id="r1", session_id="s1")
 LIMIT = 20
+DIFF_LINES = 50
 
 
 @pytest.fixture
@@ -23,7 +24,7 @@ def root(tmp_path):
 
 
 def make_tool(root, mode="write"):
-    return WriteFileTool(PathGuard([AllowedRoot(path=root, mode=mode)]), LIMIT)
+    return WriteFileTool(PathGuard([AllowedRoot(path=root, mode=mode)]), LIMIT, DIFF_LINES)
 
 
 @pytest.fixture
@@ -193,3 +194,158 @@ def test_write_file_requires_path_and_content_described_by_strings(tool):
     assert tool.parameters["required"] == ["path", "content"]
     for name in ("path", "content"):
         assert isinstance(tool.parameters["properties"][name]["description"], str)
+
+
+A3 = pytest.mark.feature("A3")
+
+
+@A3
+async def test_preview_of_a_new_file_is_a_creation_diff(root, tool):
+    result = await tool.preview({"path": "a.txt", "content": "hello"})
+    assert isinstance(result, str)
+    lines = result.split("\n")
+    assert lines[0] == "--- /dev/null"
+    assert lines[1] == "+++ b/a.txt"
+    assert "+hello" in lines
+
+
+@A3
+async def test_preview_of_an_existing_file_shows_removed_and_added_lines(root, tool):
+    (root / "a.txt").write_text("old\n", encoding="utf-8")
+    result = await tool.preview({"path": "a.txt", "content": "new\n"})
+    assert isinstance(result, str)
+    lines = result.split("\n")
+    assert lines[0] == "--- a/a.txt"
+    assert lines[1] == "+++ b/a.txt"
+    assert "-old" in lines
+    assert "+new" in lines
+
+
+@A3
+async def test_preview_does_not_write_anything(root, tool):
+    await tool.preview({"path": "a.txt", "content": "hello"})
+    assert not (root / "a.txt").exists()
+
+    (root / "b.txt").write_text("old", encoding="utf-8")
+    await tool.preview({"path": "b.txt", "content": "new"})
+    assert (root / "b.txt").read_text(encoding="utf-8") == "old"
+
+
+@A3
+async def test_preview_of_an_identical_content_reports_no_change(root, tool):
+    (root / "a.txt").write_text("same\n", encoding="utf-8")
+    assert await tool.preview({"path": "a.txt", "content": "same\n"}) == "(aucun changement)"
+
+
+@A3
+async def test_preview_of_an_empty_new_file_says_so(root, tool):
+    result = await tool.preview({"path": "a.txt", "content": ""})
+    assert result == "(création d'un fichier vide)"
+
+
+@A3
+async def test_preview_of_a_new_file_in_a_missing_subfolder_is_a_creation_diff(root, tool):
+    result = await tool.preview({"path": "src/pkg/a.py", "content": "x = 1"})
+    assert result.split("\n")[:2] == ["--- /dev/null", "+++ b/src/pkg/a.py"]
+
+
+@A3
+async def test_preview_follows_a_symlink_that_stays_in_the_root(root, tool):
+    (root / "real.txt").write_text("old\n", encoding="utf-8")
+    (root / "alias.txt").symlink_to(root / "real.txt")
+    result = await tool.preview({"path": "alias.txt", "content": "new\n"})
+    assert "-old" in result.split("\n")
+    assert "+new" in result.split("\n")
+
+
+@A3
+@pytest.mark.parametrize(
+    "args",
+    [
+        {},
+        {"content": "hello"},
+        {"path": "", "content": "hello"},
+        {"path": "   ", "content": "hello"},
+        {"path": 3, "content": "hello"},
+        {"path": "a.txt"},
+        {"path": "a.txt", "content": None},
+        {"path": "a.txt", "content": 3},
+    ],
+)
+async def test_preview_is_none_for_missing_or_invalid_arguments(tool, args):
+    assert await tool.preview(args) is None
+
+
+@A3
+@pytest.mark.parametrize("marker", ["<untrusted_content>", "</untrusted_content>"])
+async def test_preview_is_none_for_a_content_holding_the_untrusted_marker(tool, marker):
+    assert await tool.preview({"path": "a.txt", "content": f"text {marker}"}) is None
+
+
+@A3
+async def test_preview_is_none_for_a_content_above_the_limit(tool):
+    assert await tool.preview({"path": "a.txt", "content": "x" * (LIMIT + 1)}) is None
+
+
+@A3
+async def test_preview_is_none_for_a_path_outside_the_root(tool):
+    assert await tool.preview({"path": "../escaped.txt", "content": "hello"}) is None
+
+
+@A3
+async def test_preview_is_none_for_a_read_only_root(root):
+    tool = make_tool(root, mode="read")
+    assert await tool.preview({"path": "a.txt", "content": "hello"}) is None
+
+
+@A3
+async def test_preview_is_none_for_a_symlink_that_leaves_the_root(tmp_path, root, tool):
+    target = tmp_path / "outside.txt"
+    target.write_text("original", encoding="utf-8")
+    (root / "link.txt").symlink_to(target)
+    assert await tool.preview({"path": "link.txt", "content": "new"}) is None
+
+
+@A3
+async def test_preview_is_none_for_a_folder(root, tool):
+    (root / "sub").mkdir()
+    assert await tool.preview({"path": "sub", "content": "hello"}) is None
+
+
+@A3
+async def test_preview_is_none_for_an_existing_file_above_the_limit(root, tool):
+    (root / "a.txt").write_text("x" * (LIMIT + 1), encoding="utf-8")
+    assert await tool.preview({"path": "a.txt", "content": "new"}) is None
+
+
+@A3
+async def test_preview_is_none_for_an_existing_file_that_is_not_utf8(root, tool):
+    (root / "a.bin").write_bytes(b"\xff\xfe\x00")
+    assert await tool.preview({"path": "a.bin", "content": "new"}) is None
+
+
+@A3
+async def test_preview_reads_an_existing_file_exactly_at_the_limit(root, tool):
+    (root / "a.txt").write_text("x" * LIMIT, encoding="utf-8")
+    result = await tool.preview({"path": "a.txt", "content": "new"})
+    assert result.split("\n")[0] == "--- a/a.txt"
+
+
+@A3
+async def test_preview_truncates_a_long_diff_with_the_configured_limit(root):
+    guard = PathGuard([AllowedRoot(path=root, mode="write")])
+    tool = WriteFileTool(guard, 1000, 4)
+    result = await tool.preview({"path": "a.txt", "content": "1\n2\n3\n4\n5\n"})
+    lines = result.split("\n")
+    assert len(lines) == 5
+    assert lines[-1].endswith("4 lignes de plus")
+
+
+@A3
+async def test_preview_matches_what_run_then_writes(root, tool):
+    (root / "a.txt").write_text("old\n", encoding="utf-8")
+    args = {"path": "a.txt", "content": "new\n"}
+    assert await tool.preview(args) is not None
+    result = await tool.run(args, CTX)
+    assert not result.is_error
+    assert (root / "a.txt").read_text(encoding="utf-8") == "new\n"
