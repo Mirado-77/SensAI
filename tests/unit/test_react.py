@@ -3,11 +3,13 @@
 import json
 
 import pytest
+from tests.unit.test_cli import chat_setup
 from tests.unit.test_runtime import READ_CALL, build, events_of, saved
 
+from sensai.cli.chat import run_chat
 from sensai.core.config import ReactConfig, load_config
 from sensai.core.errors import ConfigError
-from sensai.core.fakes import FakeTool
+from sensai.core.fakes import FakeModelGateway, FakeTool
 from sensai.core.react import plan_schema
 from sensai.core.schema import schema_errors
 from sensai.core.types import Chunk, ToolResult, Usage
@@ -121,3 +123,13 @@ def test_a1_max_plan_steps_is_bounded(value):
     with pytest.raises(ConfigError):
         load_config(overrides={"react": {"max_plan_steps": value}})
 
+
+async def test_a1_chat_shows_the_plan_and_each_step(tmp_path):
+    react = {"enabled": True, "max_plan_steps": 5}
+    config, terminal, out, err = chat_setup(tmp_path, "fix it", react=react)
+    gateway = FakeModelGateway(plan_script(), [Chunk("Done")])
+    assert await run_chat(config, terminal, gateway) == 0
+    assert "plan> Fix the failing test" in out.getvalue()
+    assert "1. Read a.py" in out.getvalue()
+    assert "sensai> Done" in out.getvalue()
+    assert err.getvalue() == ""
