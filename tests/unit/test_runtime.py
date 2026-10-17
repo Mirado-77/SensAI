@@ -34,7 +34,14 @@ class Setup:
 
 
 def build(
-    *scripts, gateway=None, tools=(), rules=None, approvals=(), system_prompt=None, **limits
+    *scripts,
+    gateway=None,
+    tools=(),
+    rules=None,
+    approvals=(),
+    system_prompt=None,
+    react=None,
+    **limits,
 ) -> Setup:
     gateway = gateway if gateway is not None else FakeModelGateway(*scripts)
     store = InMemorySessionStore()
@@ -49,7 +56,7 @@ def build(
         policy=ApprovalPolicy({**RULES, **(rules or {})}),
     )
     config = RuntimeConfig(**{**LIMITS, **limits})
-    runtime = AgentRuntime(deps, config, "test-model", system_prompt)
+    runtime = AgentRuntime(deps, config, "test-model", system_prompt, react=react)
     return Setup(runtime, gateway, store, sink, channel, store.create_session())
 
 

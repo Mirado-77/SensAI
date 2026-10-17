@@ -18,6 +18,9 @@ APPROVAL_REQUESTED = "approval.requested"
 APPROVAL_RESOLVED = "approval.resolved"
 STRUCTURED_REPAIRED = "structured.repaired"
 STRUCTURED_FAILED = "structured.failed"
+REACT_PLAN = "react.plan"
+REACT_ACTION = "react.action"
+REACT_OBSERVATION = "react.observation"
 
 EVENT_TYPES = frozenset(
     {
@@ -35,6 +38,9 @@ EVENT_TYPES = frozenset(
         APPROVAL_RESOLVED,
         STRUCTURED_REPAIRED,
         STRUCTURED_FAILED,
+        REACT_PLAN,
+        REACT_ACTION,
+        REACT_OBSERVATION,
     }
 )
 

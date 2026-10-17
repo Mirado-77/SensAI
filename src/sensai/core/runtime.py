@@ -1,11 +1,13 @@
 """AgentRuntime: one conversation turn, run as a state machine.
 
-    RECEIVE -> ENTRY_HOOKS -> BUILD_CONTEXT -> MODEL_STREAM
+    RECEIVE -> ENTRY_HOOKS -> BUILD_CONTEXT -> PLAN? -> MODEL_STREAM
         -> ANSWER | TOOL_CALL -> POLICY -> APPROVAL? -> EXECUTE -> MODEL_STREAM
     -> EXIT_HOOKS -> PERSIST -> completed | cancelled | failed
 
 By default a turn makes a single model call. Features that need more (guardrails, summaries,
-caches) plug into `entry_hooks` / `exit_hooks` without changing the loop.
+caches) plug into `entry_hooks` / `exit_hooks` without changing the loop. With `[react]`
+enabled (A1), one structured planning call comes first and every action / observation of the
+tool loop is an event (see `sensai.core.react`).
 
 Event payloads (all events also carry `run_id`):
 
@@ -19,6 +21,7 @@ Event payloads (all events also carry `run_id`):
 - tool.finished: call_id, tool, is_error, duration_ms, content
 - tool.failed: call_id, tool, error ("unknown tool", "invalid arguments", "denied" or the
   exception)
+- react.plan, react.action, react.observation: see `sensai.core.react`
 - run.completed: session_id, steps, tool_calls
 - run.cancelled: session_id, partial
 - run.failed: session_id, error_type, error
@@ -30,15 +33,18 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field, replace
 from typing import Any, Literal
 
-from sensai.core.config import RuntimeConfig
+from sensai.core.config import ReactConfig, RuntimeConfig
 from sensai.core.contracts import EventSink, ModelGateway, SessionStore, Tool, UserChannel
-from sensai.core.errors import RunLimitError, SensaiError
+from sensai.core.errors import RunLimitError, SensaiError, StructuredOutputError
 from sensai.core.events import (
     APPROVAL_REQUESTED,
     APPROVAL_RESOLVED,
     MODEL_CHUNK,
     MODEL_TOOL_CALL,
     MODEL_USAGE,
+    REACT_ACTION,
+    REACT_OBSERVATION,
+    REACT_PLAN,
     RUN_CANCELLED,
     RUN_COMPLETED,
     RUN_FAILED,
@@ -48,6 +54,7 @@ from sensai.core.events import (
     TOOL_STARTED,
     make_event,
 )
+from sensai.core.react import make_plan
 from sensai.core.schema import schema_errors
 from sensai.core.types import (
     ApprovalRequest,
@@ -117,9 +124,13 @@ class AgentRuntime:
         config: RuntimeConfig,
         model_name: str,
         system_prompt: str | None = None,
+        react: ReactConfig | None = None,
+        max_repairs: int = 1,
     ) -> None:
         self._deps = deps
         self._config = config
+        self._react = react if react is not None and react.enabled else None
+        self._max_repairs = max_repairs
         self._model_name = model_name
         self.system_prompt = system_prompt
         self.entry_hooks: list[Hook] = []
@@ -159,6 +170,8 @@ class AgentRuntime:
         ctx = RunContext(run_id, session_id, user_text)
         await _run_hooks(self.entry_hooks, ctx)
         self._build_context(ctx, state)
+        if self._react is not None:
+            await self._plan(ctx, state)
         assistant = await self._model_loop(ctx, state)
         ctx.answer = assistant.content
         await _run_hooks(self.exit_hooks, ctx)
@@ -172,6 +185,28 @@ class AgentRuntime:
         ctx.messages = [*prefix, *history, user_message]
         state.new_messages.append(user_message)
 
+    async def _plan(self, ctx: RunContext, state: _RunState) -> None:
+        """Ask for a plan and give it to the model. A plan that never conforms is skipped."""
+        assert self._react is not None
+        names = [tool.name for tool in self._deps.registry.tools()]
+        try:
+            plan = await make_plan(
+                self._deps.gateway,
+                ctx.messages,
+                names,
+                max_steps=self._react.max_plan_steps,
+                max_repairs=self._max_repairs,
+                on_event=lambda type_, payload: self._emit(type_, ctx.run_id, **payload),
+            )
+        except StructuredOutputError:
+            return  # structured.failed is already logged; the turn goes on without a plan
+        for usage in plan.usage:
+            self._on_usage(ctx, state, usage)
+        self._emit(REACT_PLAN, ctx.run_id, goal=plan.goal, steps=plan.steps)
+        message = plan.message()
+        if message is not None:
+            ctx.messages.append(message)
+
     async def _model_loop(self, ctx: RunContext, state: _RunState) -> Message:
         """Call the model until it answers without asking for a tool."""
         specs = self._deps.registry.specs() or None
@@ -180,9 +215,17 @@ class AgentRuntime:
             assistant, call_ids = await self._stream_model(ctx, state, specs)
             if not assistant.tool_calls:
                 return assistant
+            self._emit_react(REACT_ACTION, ctx, state, tools=[c.name for c in assistant.tool_calls])
             results = await self._run_tools(ctx, state, assistant, call_ids)
-            ctx.messages.extend([assistant, *results])
-            state.new_messages.extend([assistant, *results])
+            observed = [{"tool": c.name, "is_error": r.is_error} for c, r in results]
+            self._emit_react(REACT_OBSERVATION, ctx, state, results=observed)
+            messages = [_tool_message(call.name, result) for call, result in results]
+            ctx.messages.extend([assistant, *messages])
+            state.new_messages.extend([assistant, *messages])
+
+    def _emit_react(self, type_: str, ctx: RunContext, state: _RunState, **payload: Any) -> None:
+        if self._react is not None:
+            self._emit(type_, ctx.run_id, step=state.steps, **payload)
 
     async def _stream_model(
         self, ctx: RunContext, state: _RunState, specs: list[ToolSpec] | None
@@ -233,21 +276,19 @@ class AgentRuntime:
 
     async def _run_tools(
         self, ctx: RunContext, state: _RunState, assistant: Message, call_ids: list[str]
-    ) -> list[Message]:
-        messages = []
+    ) -> list[tuple[ToolCall, ToolResult]]:
+        results = []
         for call_id, call in zip(call_ids, assistant.tool_calls, strict=True):
             self._count_tool_call(state)
-            messages.append(await self._run_tool(ctx, call_id, call))
-        return messages
+            results.append((call, await self._run_tool(ctx, call_id, call)))
+        return results
 
-    async def _run_tool(self, ctx: RunContext, call_id: str, call: ToolCall) -> Message:
+    async def _run_tool(self, ctx: RunContext, call_id: str, call: ToolCall) -> ToolResult:
         tool = self._deps.registry.get(call.name)
         if tool is None:
             self._emit_tool(TOOL_FAILED, ctx, call_id, call.name, error="unknown tool")
-            result = _error(f"Unknown tool: {call.name}")
-        else:
-            result = await self._run_allowed(ctx, call_id, tool, call)
-        return _tool_message(call.name, result)
+            return _error(f"Unknown tool: {call.name}")
+        return await self._run_allowed(ctx, call_id, tool, call)
 
     async def _run_allowed(
         self, ctx: RunContext, call_id: str, tool: Tool, call: ToolCall

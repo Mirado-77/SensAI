@@ -207,7 +207,9 @@ async def test_ask_is_not_supported_yet():
 
 def chat_setup(tmp_path, *lines, **overrides):
     storage = {"db_path": str(tmp_path / "sensai.db")}
-    config = load_config(overrides={"storage": storage, **overrides})
+    # A1 planning is off here so that each script is one model call; test_react turns it on.
+    react = {"enabled": False, "max_plan_steps": 5}
+    config = load_config(overrides={"storage": storage, "react": react, **overrides})
     terminal, out, err = make_terminal(scripted(*lines))
     return config, terminal, out, err
 
