@@ -12,7 +12,7 @@ can call `ask_user`, handled here through the UserChannel (see `sensai.core.ques
 
 Event payloads (all events also carry `run_id`):
 
-- run.started: session_id, model
+- run.started: session_id, model, prompt_version (A4: `<name>@<sha>` or None)
 - model.chunk: text
 - model.tool_call: call_id, name, args
 - model.usage: prompt_tokens, completion_tokens
@@ -147,6 +147,7 @@ class AgentRuntime:
         self._questions = questions if questions is not None and questions.enabled else None
         self._model_name = model_name
         self.system_prompt = system_prompt
+        self.prompt_version: str | None = None
         self.entry_hooks: list[Hook] = []
         self.exit_hooks: list[Hook] = []
 
@@ -157,7 +158,13 @@ class AgentRuntime:
         """
         run_id = new_id()
         state = _RunState()
-        self._emit(RUN_STARTED, run_id, session_id=session_id, model=self._model_name)
+        self._emit(
+            RUN_STARTED,
+            run_id,
+            session_id=session_id,
+            model=self._model_name,
+            prompt_version=self.prompt_version,
+        )
         try:
             answer = await self._run_and_save(run_id, session_id, user_text, state)
         except asyncio.CancelledError:
