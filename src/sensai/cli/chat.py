@@ -17,12 +17,14 @@ from sensai.cli.profile import (
     profile_prompt,
     run_profile_command,
 )
+from sensai.cli.prompts import PROMPT_COMMAND, ChatPrompt, run_prompt_command
 from sensai.cli.render import ConsoleRenderer
 from sensai.cli.terminal import Terminal
 from sensai.core.bus import EventBus
 from sensai.core.config import Config
 from sensai.core.contracts import ModelGateway, Tool
 from sensai.core.errors import ConfigError, SensaiError
+from sensai.core.prompts import load_version
 from sensai.core.runtime import AgentRuntime, RunResult, RuntimeDeps
 from sensai.db.connection import connect
 from sensai.memory.sqlite_store import SqliteSessionStore
@@ -82,6 +84,7 @@ async def chat_loop(
     terminal: Terminal,
     store: SqliteSessionStore,
     registry: ToolRegistry | None = None,
+    prompt: ChatPrompt | None = None,
 ) -> None:
     """Read lines and run one turn per line, until /exit, Ctrl-D or Ctrl-C at the prompt."""
     while True:
@@ -95,7 +98,13 @@ async def chat_loop(
         if text == TOOLS_COMMAND:
             print_tools(terminal, registry)
         elif text.split(" ", 1)[0] == PROFILE_COMMAND:
-            runtime.system_prompt = run_profile_command(store, terminal, text)
+            prompt = prompt or ChatPrompt(None)
+            prompt.profile = run_profile_command(store, terminal, text)
+            prompt.apply(runtime)
+        elif text.split(" ", 1)[0] == PROMPT_COMMAND:
+            prompt = prompt or ChatPrompt(None)
+            run_prompt_command(prompt, terminal, text)
+            prompt.apply(runtime)
         elif text:
             await run_interruptible(runtime.run_turn(session_id, text))
 
@@ -124,6 +133,11 @@ async def run_chat(
     `resume` is the id (or id prefix) of a session to continue, LAST_SESSION for the most
     recent one, None for a new session.
     """
+    try:
+        version = load_version(config.prompts.system) if config.prompts.system else None
+    except ConfigError as exc:
+        terminal.errors.print(Text(f"Erreur : {exc}", style="bold red"))
+        return 2
     connection = _open_database(config, terminal)
     if connection is None:
         return 2
@@ -138,18 +152,19 @@ async def run_chat(
         async with McpServers(config.mcp) as mcp:
             registry = build_registry(native, mcp, terminal)
             deps = _build_deps(config, terminal, connection, gateway, registry)
-            prompt = profile_prompt(load_profile(store))
+            prompt = ChatPrompt(version, profile_prompt(load_profile(store)))
             runtime = AgentRuntime(
                 deps,
                 config.runtime,
                 config.model.name,
-                prompt,
+                None,
                 react=config.react,
                 max_repairs=config.structured.max_repairs,
                 questions=config.questions,
             )
-            terminal.console.print(Text(_banner(config, registry), "dim"))
-            await chat_loop(runtime, session_id, terminal, store, registry)
+            prompt.apply(runtime)
+            terminal.console.print(Text(_banner(config, registry, prompt), "dim"))
+            await chat_loop(runtime, session_id, terminal, store, registry, prompt)
         return 0
     finally:
         connection.close()
@@ -204,9 +219,13 @@ def build_registry(native: list[Tool], mcp: McpServers, terminal: Terminal) -> T
     return registry
 
 
-def _banner(config: Config, registry: ToolRegistry) -> str:
+def _banner(config: Config, registry: ToolRegistry, prompt: ChatPrompt) -> str:
     tools = f"{len(registry)} tools ({TOOLS_COMMAND})" if len(registry) else "no tools"
-    return f"SENSAI | model: {config.model.name} | {tools} | /exit or Ctrl-D to quit"
+    version = prompt.version.label if prompt.version else "none"
+    return (
+        f"SENSAI | model: {config.model.name} | prompt: {version} ({PROMPT_COMMAND}) | {tools}"
+        " | /exit or Ctrl-D to quit"
+    )
 
 
 def _open_database(config: Config, terminal: Terminal) -> sqlite3.Connection | None:

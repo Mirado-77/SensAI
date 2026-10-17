@@ -15,9 +15,12 @@ from rich.text import Text
 
 from sensai.cli.ask import run_ask
 from sensai.cli.chat import LAST_SESSION, print_sessions, run_chat
+from sensai.cli.prompts import print_prompt_diff, print_prompt_stats, print_prompt_versions
 from sensai.cli.terminal import Terminal
 from sensai.core.config import Config, load_config
 from sensai.core.errors import ConfigError
+from sensai.db.connection import connect
+from sensai.observability.prompt_stats import prompt_stats
 
 with contextlib.suppress(ImportError):
     import readline  # noqa: F401  (line editing and history for input())
@@ -37,6 +40,7 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="ID",
         help="continue a saved session (the most recent one without ID; an id prefix is enough)",
     )
+    chat.add_argument("--prompt", metavar="NAME", help="system prompt version (e.g. v1)")
     sessions = commands.add_parser("sessions", help="list the saved sessions")
     _add_common_options(sessions)
     ask = commands.add_parser(
@@ -45,6 +49,14 @@ def build_parser() -> argparse.ArgumentParser:
     _add_common_options(ask)
     ask.add_argument("--schema", type=Path, required=True, help="JSON Schema file of the answer")
     ask.add_argument("question", nargs="+", help="the question, or - to read it from stdin")
+    prompts = commands.add_parser("prompts", help="list, compare and measure the prompt versions")
+    _add_common_options(prompts)
+    actions = prompts.add_subparsers(dest="action")
+    actions.add_parser("list", help="list the versions, * marks the active one")
+    diff = actions.add_parser("diff", help="show the changes between two versions")
+    diff.add_argument("old")
+    diff.add_argument("new")
+    actions.add_parser("stats", help="compare the versions on the recorded runs")
     return parser
 
 
@@ -54,8 +66,10 @@ def _add_common_options(parser: argparse.ArgumentParser) -> None:
 
 
 def config_from_args(args: argparse.Namespace) -> Config:
-    overrides = {"model": {"name": args.model}} if args.model else None
-    return load_config(args.config, overrides)
+    overrides: dict[str, Any] = {"model": {"name": args.model}} if args.model else {}
+    if getattr(args, "prompt", None) is not None:
+        overrides["prompts"] = {"system": args.prompt}
+    return load_config(args.config, overrides or None)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -70,7 +84,21 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _run(run_ask(config, terminal, args.schema, _question(args.question)), terminal)
     if args.command == "sessions":
         return print_sessions(config, terminal)
+    if args.command == "prompts":
+        return _prompts(args, config, terminal)
     return _run(run_chat(config, terminal, resume=args.resume), terminal)
+
+
+def _prompts(args: argparse.Namespace, config: Config, terminal: Terminal) -> int:
+    if args.action == "diff":
+        return print_prompt_diff(terminal, args.old, args.new)
+    if args.action == "stats":
+        connection = connect(config.storage.db_path)
+        try:
+            return print_prompt_stats(prompt_stats(connection), terminal)
+        finally:
+            connection.close()
+    return print_prompt_versions(terminal, config.prompts.system)
 
 
 def _question(words: list[str]) -> str:
