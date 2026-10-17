@@ -21,6 +21,8 @@ STRUCTURED_FAILED = "structured.failed"
 REACT_PLAN = "react.plan"
 REACT_ACTION = "react.action"
 REACT_OBSERVATION = "react.observation"
+QUESTION_REQUESTED = "question.requested"
+QUESTION_ANSWERED = "question.answered"
 
 EVENT_TYPES = frozenset(
     {
@@ -41,19 +43,17 @@ EVENT_TYPES = frozenset(
         REACT_PLAN,
         REACT_ACTION,
         REACT_OBSERVATION,
+        QUESTION_REQUESTED,
+        QUESTION_ANSWERED,
     }
 )
 
-QUESTION_REQUESTED = "question.requested"
-QUESTION_ANSWERED = "question.answered"
 MEMORY_COMPRESSED = "memory.compressed"
 ARTIFACT_PATCHED = "artifact.patched"
 GUARD_BLOCKED = "guard.blocked"
 
 RESERVED_EVENT_TYPES = frozenset(
     {
-        QUESTION_REQUESTED,
-        QUESTION_ANSWERED,
         MEMORY_COMPRESSED,
         ARTIFACT_PATCHED,
         GUARD_BLOCKED,

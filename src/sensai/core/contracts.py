@@ -70,7 +70,11 @@ class UserChannel(Protocol):
     async def confirm(self, request: ApprovalRequest) -> bool: ...
 
     async def ask(self, question: dict[str, Any]) -> dict[str, Any]:
-        """Reserved for X4 (structured questions)."""
+        """Ask the user a structured question (X4) and return their answer.
+
+        `question` is {"question": str, "options": list[str]} (options may be empty). The answer
+        is {"answer": str}, the chosen option or free text; "" when the user gives none.
+        """
         ...
 
 

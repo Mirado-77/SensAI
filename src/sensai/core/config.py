@@ -44,6 +44,13 @@ class ReactConfig(_Section):
     max_plan_steps: int = Field(gt=0, le=10)
 
 
+class QuestionsConfig(_Section):
+    """Structured questions (X4): the model may ask the user when the request is ambiguous."""
+
+    enabled: bool
+    max_per_turn: int = Field(gt=0, le=5)
+
+
 class StorageConfig(_Section):
     db_path: Path
 
@@ -88,6 +95,7 @@ class Config(_Section):
     runtime: RuntimeConfig
     structured: StructuredConfig
     react: ReactConfig
+    questions: QuestionsConfig
     storage: StorageConfig
     policy: PolicyConfig
     files: FilesConfig
