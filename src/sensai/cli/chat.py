@@ -146,6 +146,7 @@ async def run_chat(
                 prompt,
                 react=config.react,
                 max_repairs=config.structured.max_repairs,
+                questions=config.questions,
             )
             terminal.console.print(Text(_banner(config, registry), "dim"))
             await chat_loop(runtime, session_id, terminal, store, registry)
