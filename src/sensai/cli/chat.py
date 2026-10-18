@@ -139,7 +139,14 @@ async def run_chat(
             registry = build_registry(native, mcp, terminal)
             deps = _build_deps(config, terminal, connection, gateway, registry)
             prompt = profile_prompt(load_profile(store))
-            runtime = AgentRuntime(deps, config.runtime, config.model.name, prompt)
+            runtime = AgentRuntime(
+                deps,
+                config.runtime,
+                config.model.name,
+                prompt,
+                react=config.react,
+                max_repairs=config.structured.max_repairs,
+            )
             terminal.console.print(Text(_banner(config, registry), "dim"))
             await chat_loop(runtime, session_id, terminal, store, registry)
         return 0

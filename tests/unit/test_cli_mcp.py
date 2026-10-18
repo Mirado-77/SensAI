@@ -18,7 +18,9 @@ FAKE_SERVER = Path(__file__).resolve().parents[1] / "fixtures" / "mcp_fake_serve
 
 def chat_setup(tmp_path, *lines, **overrides):
     storage = {"db_path": str(tmp_path / "sensai.db")}
-    config = load_config(overrides={"storage": storage, **overrides})
+    # A1 planning is off here so that each script is one model call; test_react turns it on.
+    react = {"enabled": False, "max_plan_steps": 5}
+    config = load_config(overrides={"storage": storage, "react": react, **overrides})
     out, err = io.StringIO(), io.StringIO()
     remaining = iter(lines)
 

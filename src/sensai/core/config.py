@@ -37,6 +37,13 @@ class StructuredConfig(_Section):
     max_repairs: int = Field(ge=0, le=3)
 
 
+class ReactConfig(_Section):
+    """Bounded ReAct loop (A1): plan first, then act and observe one step at a time."""
+
+    enabled: bool
+    max_plan_steps: int = Field(gt=0, le=10)
+
+
 class StorageConfig(_Section):
     db_path: Path
 
@@ -81,6 +88,7 @@ class Config(_Section):
     model: ModelConfig
     runtime: RuntimeConfig
     structured: StructuredConfig
+    react: ReactConfig
     storage: StorageConfig
     policy: PolicyConfig
     files: FilesConfig

@@ -18,6 +18,12 @@ max_tokens = 32768  # cumulative tokens (prompt + completion) over one turn
 # Structured output (T5): repair attempts when the JSON does not match the schema.
 max_repairs = 1
 
+[react]
+# Bounded ReAct loop (A1): before acting, the model writes a short plan (structured output), then
+# each action and observation is an event. The loop stays bounded by [runtime] max_steps.
+enabled = true
+max_plan_steps = 5
+
 [storage]
 db_path = "~/.sensai/sensai.db"
 
