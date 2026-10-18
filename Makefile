@@ -26,3 +26,6 @@ ollama:
 
 chat:
 	$(BIN)/sensai chat $(ARGS)
+
+sandbox-image:
+	docker build -t sensai-sandbox:latest sandbox/
