@@ -209,7 +209,10 @@ def chat_setup(tmp_path, *lines, **overrides):
     storage = {"db_path": str(tmp_path / "sensai.db")}
     # A1 planning is off here so that each script is one model call; test_react turns it on.
     react = {"enabled": False, "max_plan_steps": 5}
-    config = load_config(overrides={"storage": storage, "react": react, **overrides})
+    # T2 is off so that no test depends on Docker; test_sandbox_tools turns it on.
+    sandbox = {"enabled": False}
+    overrides = {"storage": storage, "react": react, "sandbox": sandbox, **overrides}
+    config = load_config(overrides=overrides)
     terminal, out, err = make_terminal(scripted(*lines))
     return config, terminal, out, err
 

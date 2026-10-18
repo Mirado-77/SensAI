@@ -7,6 +7,8 @@ from sensai.tools.filesystem.guard import PathGuard
 from sensai.tools.filesystem.list_dir import ListDirTool
 from sensai.tools.filesystem.read_file import ReadFileTool
 from sensai.tools.filesystem.write_file import WriteFileTool
+from sensai.tools.sandbox.docker import docker_unavailable_reason
+from sensai.tools.sandbox.run_command import RunCommandTool
 
 
 def native_tools(config: Config) -> list[Tool]:
@@ -20,3 +22,14 @@ def native_tools(config: Config) -> list[Tool]:
         WriteFileTool(guard, files.max_write_bytes, files.max_diff_lines),
         EditFileTool(guard, files.max_write_bytes, files.max_diff_lines),
     ]
+
+
+async def sandbox_tools(config: Config) -> tuple[list[Tool], str | None]:
+    """Return the sandbox tool (T2), or no tool and the reason why it is disabled."""
+    sandbox = config.sandbox
+    if not sandbox.enabled or not config.files.allowed_roots:
+        return [], None
+    reason = await docker_unavailable_reason(sandbox.image)
+    if reason is not None:
+        return [], reason
+    return [RunCommandTool(PathGuard(config.files.allowed_roots), sandbox)], None
