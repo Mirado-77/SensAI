@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Any
 
 from sensai.core.types import Risk, ToolContext, ToolResult
+from sensai.safety.diff import unified_diff
 from sensai.safety.untrusted import contains_untrusted_marker
 from sensai.tools.filesystem.atomic import atomic_write
 from sensai.tools.filesystem.guard import PathDeniedError, PathGuard
@@ -42,9 +43,10 @@ class EditFileTool:
         "required": ["path", "old_text", "new_text"],
     }
 
-    def __init__(self, guard: PathGuard, max_write_bytes: int) -> None:
+    def __init__(self, guard: PathGuard, max_write_bytes: int, max_diff_lines: int) -> None:
         self._guard = guard
         self._max_bytes = max_write_bytes
+        self._max_diff_lines = max_diff_lines
 
     def _check_arguments(self, args: dict[str, Any]) -> ToolResult | None:
         path = args.get("path")
@@ -121,3 +123,28 @@ class EditFileTool:
             message = "Contenu trop volumineux : le fichier n'a pas été modifié."
             return ToolResult(message, is_error=True)
         return new_content
+
+    def _compute_edit(self, path, old_text, new_text) -> tuple[str, str] | None:
+        text = self._load(path)
+        if isinstance(text, ToolResult):
+            return None
+        new_content = self._replace_once(path, text, old_text, new_text)
+        if isinstance(new_content, ToolResult):
+            return None
+        return text, new_content
+
+    async def preview(self, args: dict[str, Any]) -> str | None:
+        if self._check_arguments(args) is not None:
+            return None
+        try:
+            safe_path = self._guard.resolve(args["path"], write=True)
+        except PathDeniedError:
+            return None
+
+        computed = await asyncio.to_thread(
+            self._compute_edit, safe_path, args["old_text"], args["new_text"]
+        )
+        if computed is None:
+            return None
+        old, new = computed
+        return unified_diff(args["path"], old, new, self._max_diff_lines)

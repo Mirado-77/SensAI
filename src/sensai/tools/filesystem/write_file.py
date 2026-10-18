@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Any
 
 from sensai.core.types import Risk, ToolContext, ToolResult
+from sensai.safety.diff import unified_diff
 from sensai.safety.untrusted import contains_untrusted_marker
 from sensai.tools.filesystem.atomic import atomic_write
 from sensai.tools.filesystem.guard import PathDeniedError, PathGuard
@@ -31,11 +32,13 @@ class WriteFileTool:
         self,
         guard: PathGuard,
         max_write_bytes: int,
+        max_diff_lines: int,
     ) -> None:
         self._guard = guard
         self._max_bytes = max_write_bytes
+        self._max_diff_lines = max_diff_lines
 
-    async def run(self, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
+    def _check_arguments(self, args: dict[str, Any]) -> ToolResult | None:
         path = args.get("path")
         content = args.get("content")
         if not isinstance(path, str) or not path.strip():
@@ -54,12 +57,17 @@ class WriteFileTool:
                 f"Contenu trop volumineux : {size} octets (maximum {self._max_bytes}).",
                 is_error=True,
             )
+        return None
 
+    async def run(self, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
+        error = self._check_arguments(args)
+        if error is not None:
+            return error
         try:
-            safe_path = self._guard.resolve(path, write=True)
-        except PathDeniedError as error:
-            return ToolResult(str(error), is_error=True)
-        return await asyncio.to_thread(self._write, safe_path, content)
+            safe_path = self._guard.resolve(args["path"], write=True)
+        except PathDeniedError as exc:
+            return ToolResult(str(exc), is_error=True)
+        return await asyncio.to_thread(self._write, safe_path, args["content"])
 
     def _write(self, path: Path, content: str) -> ToolResult:
         if path.is_dir():
@@ -70,3 +78,23 @@ class WriteFileTool:
         except OSError as error:
             return ToolResult(f"Écriture impossible : {path} ({error})", is_error=True)
         return ToolResult(f"Fichier {'modifié' if existed else 'créé'} : {path}")
+
+    def _read_current(self, path: Path) -> str | None:
+        if not path.exists():
+            return None
+        if path.stat().st_size > self._max_bytes:
+            raise OSError("Fichier trop volumineux pour l'aperçu")
+        return path.read_text(encoding="utf-8")
+
+    async def preview(self, args: dict[str, Any]) -> str | None:
+        if self._check_arguments(args) is not None:
+            return None
+        try:
+            safe_path = self._guard.resolve(args["path"], write=True)
+        except PathDeniedError:
+            return None
+        try:
+            old = await asyncio.to_thread(self._read_current, safe_path)
+        except (OSError, UnicodeDecodeError):
+            return None
+        return unified_diff(args["path"], old, args["content"], self._max_diff_lines)

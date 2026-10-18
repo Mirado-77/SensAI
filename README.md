@@ -132,6 +132,7 @@ name = "llama3.2:3b"
 | `[mcp]` | `timeout_s`, `[[mcp.servers]]` | Maximum time of one MCP request; MCP servers: `name`, `command`, `args`, `env`, `cwd`, `enabled`, `risk` (`read`, `write`, `exec` or `auto`) |
 | `[storage]` | `db_path` | sqlite database holding sessions, messages and the event journal |
 | `[policy]` | `read`, `write`, `exec` | Before a tool runs: `allow`, `ask` (user approval) or `deny` |
+| `[files]` | `max_read_bytes`, `max_write_bytes`, `max_list_entries`, `max_diff_lines`, `allowed_roots` | Limits of the file tools, lines shown in an approval diff, roots (`path`, `mode` `read` or `write`) the tools may access |
 
 ## How it works
 
@@ -191,6 +192,8 @@ file, one migration per pull request. Migrations are applied when the database i
 | T1 | MCP: hand-written stdio client, our own server `sensai-mcp`, existing servers by configuration, same permissions as native tools | done ([user stories](docs/user-stories/T1.md)) |
 | M1 | Session persistence and user profile: `sensai sessions`, `sensai chat --resume`, `/profile` sent at every turn | done ([user stories](docs/user-stories/M1.md)) |
 | T5 | Structured output: JSON validated against a schema with one repair attempt (`sensai ask --schema`), tool arguments validated before any execution | done ([user stories](docs/user-stories/T5.md)) |
+| T4 | File access limited to allowed roots: `read_file`, `list_dir`, `write_file`, `edit_file`, path guard (traversal and symlinks), atomic writes, untrusted content marking | done ([user stories](docs/user-stories/T4.md)) |
+| A3 | Diff shown before any file write: `write_file` and `edit_file` build a unified diff the user approves or refuses, any tool can provide its own preview | done ([user stories](docs/user-stories/A3.md)) |
 
 Foundations already in place for the next features: the tool-call path of the agent loop
 (registry, approval by risk level, untrusted content marking), the event journal, and the

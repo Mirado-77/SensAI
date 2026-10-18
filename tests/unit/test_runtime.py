@@ -412,3 +412,145 @@ async def test_invalid_arguments_are_checked_before_asking_the_user():
     await s.runtime.run_turn(s.session_id, "Write")
     assert s.channel.confirm_requests == []
     assert tool.calls == []
+
+
+A3 = pytest.mark.feature("A3")
+WRITE_CALL = ToolCall("write_file", {"path": "a.py"})
+GENERIC_PREVIEW = 'write_file({"path": "a.py"})'
+
+
+class PreviewTool(FakeTool):
+    def __init__(self, text="DIFF", error=None, risk="write"):
+        super().__init__(name="write_file", risk=risk)
+        self._text = text
+        self._preview_error = error
+        self.preview_calls = []
+
+    async def preview(self, args):
+        self.preview_calls.append(args)
+        if self._preview_error is not None:
+            raise self._preview_error
+        return self._text
+
+
+class HangingPreviewTool(PreviewTool):
+    async def preview(self, args):
+        self.preview_calls.append(args)
+        await asyncio.Event().wait()
+
+
+@A3
+async def test_the_approval_request_carries_the_preview_of_the_tool():
+    tool = PreviewTool("DIFF")
+    s = build([WRITE_CALL], [Chunk("written")], tools=[tool], approvals=[True])
+    await s.runtime.run_turn(s.session_id, "Write a.py")
+
+    [request] = s.channel.confirm_requests
+    assert request.preview == "DIFF"
+    assert events_of(s, "approval.requested")[0].payload["preview"] == "DIFF"
+    assert tool.preview_calls == [{"path": "a.py"}]
+    assert len(tool.calls) == 1
+
+
+@A3
+@pytest.mark.parametrize("text", [None, ""])
+async def test_an_empty_preview_falls_back_to_the_generic_one(text):
+    tool = PreviewTool(text)
+    s = build([WRITE_CALL], [Chunk("written")], tools=[tool], approvals=[True])
+    await s.runtime.run_turn(s.session_id, "Write a.py")
+
+    [request] = s.channel.confirm_requests
+    assert request.preview == GENERIC_PREVIEW
+    assert events_of(s, "approval.requested")[0].payload["preview"] == GENERIC_PREVIEW
+
+
+@A3
+async def test_a_failing_preview_falls_back_and_does_not_stop_the_turn():
+    tool = PreviewTool(error=RuntimeError("boom"))
+    s = build([WRITE_CALL], [Chunk("written")], tools=[tool], approvals=[True])
+    result = await s.runtime.run_turn(s.session_id, "Write a.py")
+
+    assert result.status == "completed"
+    [request] = s.channel.confirm_requests
+    assert request.preview == GENERIC_PREVIEW
+    assert len(tool.calls) == 1
+    assert "run.failed" not in s.sink.types()
+
+
+@A3
+async def test_a_tool_without_preview_keeps_the_generic_preview():
+    tool = FakeTool(name="write_file", risk="write")
+    s = build([WRITE_CALL], [Chunk("written")], tools=[tool], approvals=[True])
+    await s.runtime.run_turn(s.session_id, "Write a.py")
+
+    [request] = s.channel.confirm_requests
+    assert request.preview == GENERIC_PREVIEW
+    assert events_of(s, "approval.requested")[0].payload["preview"] == GENERIC_PREVIEW
+
+
+@A3
+async def test_the_preview_is_shown_even_when_the_user_refuses():
+    tool = PreviewTool("DIFF")
+    s = build([WRITE_CALL], [Chunk("understood")], tools=[tool], approvals=[False])
+    await s.runtime.run_turn(s.session_id, "Write a.py")
+
+    assert s.channel.confirm_requests[0].preview == "DIFF"
+    assert events_of(s, "approval.resolved")[0].payload["approved"] is False
+    assert tool.calls == []
+
+
+@A3
+async def test_the_preview_is_not_built_when_no_approval_is_needed():
+    tool = PreviewTool("DIFF", risk="read")
+    s = build([WRITE_CALL], [Chunk("ok")], tools=[tool])
+    await s.runtime.run_turn(s.session_id, "Read a.py")
+
+    assert tool.preview_calls == []
+    assert "approval.requested" not in s.sink.types()
+    assert len(tool.calls) == 1
+
+
+@A3
+async def test_the_preview_is_not_built_when_the_policy_denies_the_tool():
+    tool = PreviewTool("DIFF")
+    s = build([WRITE_CALL], [Chunk("ok")], tools=[tool], rules={"write": "deny"})
+    await s.runtime.run_turn(s.session_id, "Write a.py")
+
+    assert tool.preview_calls == []
+    assert tool.calls == []
+
+
+@A3
+async def test_the_preview_is_not_built_when_the_arguments_are_invalid():
+    tool = PreviewTool("DIFF")
+    tool.parameters = PATH_SCHEMA
+    s = build([ToolCall("write_file", {"path": 3})], [Chunk("ok")], tools=[tool])
+    await s.runtime.run_turn(s.session_id, "Write")
+
+    assert tool.preview_calls == []
+    assert s.channel.confirm_requests == []
+
+
+@A3
+async def test_the_preview_is_built_once_per_call():
+    tool = PreviewTool("DIFF")
+    s = build([WRITE_CALL], [Chunk("written")], tools=[tool], approvals=[True])
+    await s.runtime.run_turn(s.session_id, "Write a.py")
+
+    assert len(tool.preview_calls) == 1
+
+
+@A3
+async def test_cancelling_during_the_preview_cancels_the_run():
+    tool = HangingPreviewTool()
+    s = build([WRITE_CALL], tools=[tool], approvals=[True])
+    task = asyncio.create_task(s.runtime.run_turn(s.session_id, "Write a.py"))
+    while not tool.preview_calls:
+        await asyncio.sleep(0)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert s.sink.types()[-1] == "run.cancelled"
+    assert "approval.requested" not in s.sink.types()
+    assert tool.calls == []

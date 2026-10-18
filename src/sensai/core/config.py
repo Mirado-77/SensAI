@@ -55,6 +55,7 @@ class AllowedRoot(_Section):
 class FilesConfig(_Section):
     max_read_bytes: int = Field(gt=0)
     max_write_bytes: int = Field(gt=0)
+    max_diff_lines: int = Field(gt=0)
     max_list_entries: int = Field(gt=0)
     allowed_roots: list[AllowedRoot] = Field(default_factory=list)
 
