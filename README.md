@@ -61,6 +61,22 @@ Options of `sensai chat` (also accepted by `sensai ask`):
 | `--config FILE` | TOML file that overrides `configs/default.toml`; it only lists the keys to change |
 | `--resume [ID]` | `chat` only: continue a saved session, the most recent one without `ID` |
 
+### Codebase search: `sensai index`
+
+`sensai index` splits the text files of the allowed roots (`[files] allowed_roots`) into chunks of
+lines, embeds them with Ollama (`/api/embed`, `ollama pull nomic-embed-text` first) and stores
+them in the database. `sensai index <folder>` indexes one folder inside an allowed root. Running
+it again only re-embeds the files that changed and drops the deleted ones.
+
+Once the index is not empty, the chat gets the `search_code` tool: the model searches the code
+by meaning and gets the closest excerpts as `path:start-end`, then reads the file if needed.
+
+```text
+$ sensai index
+Indexing /home/me/sensai/demo-repo
+6 files indexed (9 chunks), 0 unchanged, 0 removed
+```
+
 ### Structured answers: `sensai ask`
 
 `sensai ask --schema FILE QUESTION` asks one question and prints a JSON answer that conforms to
@@ -154,6 +170,7 @@ name = "llama3.2:3b"
 | `[storage]` | `db_path` | sqlite database holding sessions, messages and the event journal |
 | `[policy]` | `read`, `write`, `exec` | Before a tool runs: `allow`, `ask` (user approval) or `deny` |
 | `[sandbox]` | `enabled`, `image`, `cpus`, `memory_mb`, `pids_limit`, `timeout_s`, `max_output_bytes` | `run_command` container: image, limits, maximum time of one command, output kept for the model |
+| `[rag]` | `enabled`, `embed_model`, `chunk_lines`, `overlap`, `top_k` | Codebase search: Ollama embedding model, lines per chunk and lines shared by two chunks, excerpts returned by `search_code` |
 | `[files]` | `max_read_bytes`, `max_write_bytes`, `max_list_entries`, `max_diff_lines`, `allowed_roots` | Limits of the file tools, lines shown in an approval diff, roots (`path`, `mode` `read` or `write`) the tools may access |
 
 ## How it works
@@ -201,6 +218,7 @@ file, one migration per pull request. Migrations are applied when the database i
 - `src/sensai/mcp_server/`: `sensai-mcp`, our own MCP server.
 - `src/sensai/safety/`: approval policy, untrusted content marking.
 - `src/sensai/memory/`: sqlite `SessionStore`.
+- `src/sensai/rag/`: codebase index: chunks, embeddings, cosine search (R1).
 - `src/sensai/observability/`: sqlite event journal.
 - `src/sensai/db/`: connection and migrations.
 - `src/sensai/cli/`: chat loop, console rendering, approval prompt.
@@ -222,6 +240,7 @@ file, one migration per pull request. Migrations are applied when the database i
 | T4 | File access limited to allowed roots: `read_file`, `list_dir`, `write_file`, `edit_file`, path guard (traversal and symlinks), atomic writes, untrusted content marking | done ([user stories](docs/user-stories/T4.md)) |
 | A3 | Diff shown before any file write: `write_file` and `edit_file` build a unified diff the user approves or refuses, any tool can provide its own preview | done ([user stories](docs/user-stories/A3.md)) |
 | T2 | Commands in a Docker sandbox: `run_command` chosen by the model, non-root, no network, read-only mount, CPU/memory/process limits, timeout and Ctrl-C kill the container, truncated output, clear fallback without Docker | done ([user stories](docs/user-stories/T2.md)) |
+| R1 | Codebase search (RAG): `sensai index` embeds chunks of the allowed roots with Ollama, `search_code` returns the closest excerpts with `path:lines`, incremental re-indexing | done ([user stories](docs/user-stories/R1.md)) |
 
 Foundations already in place for the next features: the tool-call path of the agent loop
 (registry, approval by risk level, untrusted content marking), the event journal, and the
