@@ -3,7 +3,7 @@
 
 [model]
 # Ollama model. Provisional: to be decided with the team (size, speed, tool calling).
-name = "phi4:latest"
+name = "qwen3.5:9b"
 host = "http://localhost:11434"
 timeout_s = 120  # maximum time without a response from Ollama
 
@@ -11,7 +11,7 @@ timeout_s = 120  # maximum time without a response from Ollama
 # Limits of one AgentRuntime turn.
 max_steps = 8
 max_tool_calls = 8
-timeout_s = 300
+timeout_s = 900
 max_tokens = 32768  # cumulative tokens (prompt + completion) over one turn
 
 [structured]
