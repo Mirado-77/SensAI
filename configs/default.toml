@@ -60,3 +60,12 @@ timeout_s = 30  # maximum time for one MCP request
 # command = "npx"
 # args = ["-y", "@modelcontextprotocol/server-filesystem@2026.8.31", "demo-repo"]
 # risk = "auto"
+
+[sandbox]
+enabled = true
+image = "sensai-sandbox:latest"
+cpus = 1.0
+memory_mb = 512
+pids_limit = 128
+timeout_s = 60
+max_output_bytes = 16384

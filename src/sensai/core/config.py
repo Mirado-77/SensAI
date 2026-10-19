@@ -84,6 +84,15 @@ class McpConfig(_Section):
     servers: list[McpServerConfig] = []
 
 
+class SandboxConfig(_Section):
+    enabled: bool
+    image: str = Field(min_length=1)
+    cpus: float = Field(gt=0)
+    memory_mb: int = Field(gt=0)
+    pids_limit: int = Field(gt=0)
+    timeout_s: int = Field(gt=0)
+    max_output_bytes: int = Field(gt=0)
+
 class Config(_Section):
     model: ModelConfig
     runtime: RuntimeConfig
@@ -93,6 +102,7 @@ class Config(_Section):
     policy: PolicyConfig
     files: FilesConfig
     mcp: McpConfig
+    sandbox: SandboxConfig
 
 
 def _read_toml(path: Path) -> dict[str, Any]:

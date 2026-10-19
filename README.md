@@ -8,6 +8,7 @@ Every call to the model goes through the Ollama HTTP API, with no LLM framework.
 - Python 3.10 or newer
 - [Ollama](https://ollama.com), installed locally or started with `make ollama` (requires Docker)
 - At least one model pulled in Ollama, for example `ollama pull gemma4:e2b`
+- Optional: Docker, for the `run_command` tool (T2); build its image with `make sandbox-image`
 
 ## Installation
 
@@ -111,6 +112,25 @@ level, event journal. Their output is marked as untrusted data. A server that fa
 reported and skipped; a server that crashes or stops answering (`[mcp] timeout_s`) turns into a
 tool error the model sees.
 
+### Running commands in a sandbox
+
+With an allowed root and Docker available, the model gets `run_command`: it picks the command
+itself (`python -m pytest`, `npm test`, ...) and the command runs with `sh -c` in a throwaway
+container built from `sandbox/Dockerfile` (Python, pytest, Node, npm). Build the image once:
+
+```bash
+make sandbox-image
+```
+
+The container runs as a non-root user, without network, with a read-only filesystem except
+`/tmp`, no capabilities and the `[sandbox]` CPU, memory and process limits. The directory is
+mounted read-only at `/workspace`, so files still change only through `edit_file` and
+`write_file` and their diff. Before running, the approval shows the command and the isolation.
+The model gets the merged stdout and stderr (start and end kept when too long), the exit code
+and a hint when the sandbox blocked something (read-only file, no network, memory limit). A
+command that exceeds `[sandbox] timeout_s` or is interrupted with Ctrl-C is killed. Without
+Docker, the chat starts without `run_command` and says why.
+
 Errors are shown without a stack trace and the chat stays open: Ollama not running, model not
 installed, a limit reached (steps, tool calls, tokens, time).
 
@@ -133,6 +153,7 @@ name = "llama3.2:3b"
 | `[mcp]` | `timeout_s`, `[[mcp.servers]]` | Maximum time of one MCP request; MCP servers: `name`, `command`, `args`, `env`, `cwd`, `enabled`, `risk` (`read`, `write`, `exec` or `auto`) |
 | `[storage]` | `db_path` | sqlite database holding sessions, messages and the event journal |
 | `[policy]` | `read`, `write`, `exec` | Before a tool runs: `allow`, `ask` (user approval) or `deny` |
+| `[sandbox]` | `enabled`, `image`, `cpus`, `memory_mb`, `pids_limit`, `timeout_s`, `max_output_bytes` | `run_command` container: image, limits, maximum time of one command, output kept for the model |
 | `[files]` | `max_read_bytes`, `max_write_bytes`, `max_list_entries`, `max_diff_lines`, `allowed_roots` | Limits of the file tools, lines shown in an approval diff, roots (`path`, `mode` `read` or `write`) the tools may access |
 
 ## How it works
@@ -167,6 +188,7 @@ CLI -> AgentRuntime -> OllamaGateway -> Ollama
 | `make format` | Fix style with ruff |
 | `make ollama` | Start an Ollama server in Docker on port 11434 |
 | `make chat ARGS="..."` | Start the chat |
+| `make sandbox-image` | Build the Docker image used by `run_command` |
 
 Database changes go in a new `src/sensai/db/migrations/NNN_<feature-id>_<description>.sql`
 file, one migration per pull request. Migrations are applied when the database is opened.
@@ -175,7 +197,7 @@ file, one migration per pull request. Migrations are applied when the database i
 
 - `src/sensai/core/`: types, events, contracts, config, event bus, runtime, fakes. Never imports `cli` or `api`.
 - `src/sensai/model/`: `OllamaGateway`, structured output (`structured.py`).
-- `src/sensai/tools/`: tool registry, MCP client and adapter (`mcp/`).
+- `src/sensai/tools/`: tool registry, file tools (`filesystem/`), Docker sandbox and `run_command` (`sandbox/`), MCP client and adapter (`mcp/`).
 - `src/sensai/mcp_server/`: `sensai-mcp`, our own MCP server.
 - `src/sensai/safety/`: approval policy, untrusted content marking.
 - `src/sensai/memory/`: sqlite `SessionStore`.
@@ -184,6 +206,7 @@ file, one migration per pull request. Migrations are applied when the database i
 - `src/sensai/cli/`: chat loop, console rendering, approval prompt.
 - `configs/`: TOML configuration (`default.toml`, profiles, personas, policies) and example JSON Schemas (`schemas/`).
 - `docker/ollama/`: Dockerfile and launch script for the Ollama server.
+- `sandbox/`: Dockerfile of the `run_command` image.
 - `tests/{unit,contract,integration,fixtures}/`: tests.
 - `docs/user-stories/`: user stories, one file per feature, plus `_template.md`.
 
@@ -198,6 +221,7 @@ file, one migration per pull request. Migrations are applied when the database i
 | T5 | Structured output: JSON validated against a schema with one repair attempt (`sensai ask --schema`), tool arguments validated before any execution | done ([user stories](docs/user-stories/T5.md)) |
 | T4 | File access limited to allowed roots: `read_file`, `list_dir`, `write_file`, `edit_file`, path guard (traversal and symlinks), atomic writes, untrusted content marking | done ([user stories](docs/user-stories/T4.md)) |
 | A3 | Diff shown before any file write: `write_file` and `edit_file` build a unified diff the user approves or refuses, any tool can provide its own preview | done ([user stories](docs/user-stories/A3.md)) |
+| T2 | Commands in a Docker sandbox: `run_command` chosen by the model, non-root, no network, read-only mount, CPU/memory/process limits, timeout and Ctrl-C kill the container, truncated output, clear fallback without Docker | done ([user stories](docs/user-stories/T2.md)) |
 
 Foundations already in place for the next features: the tool-call path of the agent loop
 (registry, approval by risk level, untrusted content marking), the event journal, and the
