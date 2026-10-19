@@ -69,3 +69,13 @@ memory_mb = 512
 pids_limit = 128
 timeout_s = 60
 max_output_bytes = 16384
+
+[rag]
+# Codebase retrieval (R1). `sensai index` splits the files of the allowed roots into chunks of
+# lines, embeds them with Ollama (`ollama pull nomic-embed-text`) and stores them in the
+# database; the chat then gets a `search_code` tool. Re-run `sensai index` after changes.
+enabled = true
+embed_model = "nomic-embed-text"
+chunk_lines = 40
+overlap = 10
+top_k = 5

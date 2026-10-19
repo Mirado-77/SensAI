@@ -35,7 +35,7 @@ def test_connect_applies_the_initial_migration():
 def test_migrate_is_idempotent():
     connection = connect(":memory:")
     assert migrate(connection) == []
-    assert versions(connection) == [1]
+    assert versions(connection) == [1, 2]
 
 
 def test_connect_creates_the_parent_directory_and_keeps_the_data(tmp_path):
@@ -46,7 +46,7 @@ def test_connect_creates_the_parent_directory_and_keeps_the_data(tmp_path):
     first.close()
     second = connect(path)
     assert second.execute("SELECT id FROM profiles").fetchone()[0] == "dev"
-    assert versions(second) == [1]
+    assert versions(second) == [1, 2]
 
 
 def test_new_migrations_are_applied_in_order(tmp_path):

@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from sensai.core.errors import ConfigError
 from sensai.core.types import Decision, Risk
@@ -93,6 +93,23 @@ class SandboxConfig(_Section):
     timeout_s: int = Field(gt=0)
     max_output_bytes: int = Field(gt=0)
 
+
+class RagConfig(_Section):
+    """Codebase retrieval (R1): `sensai index` embeds chunks of lines, `search_code` finds them."""
+
+    enabled: bool
+    embed_model: str = Field(min_length=1)
+    chunk_lines: int = Field(gt=0)
+    overlap: int = Field(ge=0)
+    top_k: int = Field(gt=0, le=20)
+
+    @model_validator(mode="after")
+    def _overlap_below_chunk(self) -> "RagConfig":
+        if self.overlap >= self.chunk_lines:
+            raise ValueError("overlap must be smaller than chunk_lines")
+        return self
+
+
 class Config(_Section):
     model: ModelConfig
     runtime: RuntimeConfig
@@ -103,6 +120,7 @@ class Config(_Section):
     files: FilesConfig
     mcp: McpConfig
     sandbox: SandboxConfig
+    rag: RagConfig
 
 
 def _read_toml(path: Path) -> dict[str, Any]:
