@@ -31,3 +31,12 @@ class ModelNotFoundError(ModelError):
 
 class StructuredOutputError(ModelError):
     """The model did not produce JSON conforming to the schema, even after repair."""
+
+
+class GuardBlockedError(SensaiError):
+    """A guard refused the input of a turn or the output of a tool. `stage` is "entry" or "tool"."""
+
+    def __init__(self, stage: str, reason: str) -> None:
+        super().__init__(reason)
+        self.stage = stage
+        self.reason = reason
