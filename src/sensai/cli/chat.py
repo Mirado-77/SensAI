@@ -149,6 +149,7 @@ async def run_chat(
                 prompt,
                 react=config.react,
                 max_repairs=config.structured.max_repairs,
+                questions=config.questions,
             )
             install_guards(runtime, config.guards, read_env_file(config.guards.env_file))
             terminal.console.print(Text(_banner(config, registry), "dim"))

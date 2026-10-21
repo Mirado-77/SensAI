@@ -24,6 +24,12 @@ max_repairs = 1
 enabled = true
 max_plan_steps = 5
 
+[questions]
+# Structured questions (X4): the model gets an `ask_user` tool to ask one short question, with
+# options, when the request is ambiguous. Each question counts as a tool call.
+enabled = true
+max_per_turn = 2
+
 [storage]
 db_path = "~/.sensai/sensai.db"
 

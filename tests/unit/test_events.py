@@ -66,10 +66,11 @@ def test_initial_vocabulary_is_complete():
         "react.observation",
         "guard.blocked",
         "guard.redacted",
-    }
-    assert RESERVED_EVENT_TYPES == {
         "question.requested",
         "question.answered",
+    }
+
+    assert RESERVED_EVENT_TYPES == {
         "memory.compressed",
         "artifact.patched",
     }
