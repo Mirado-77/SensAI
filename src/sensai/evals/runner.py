@@ -17,6 +17,7 @@ from sensai.evals.judge import Judgement, judge, requested_calls
 from sensai.memory.sqlite_store import SqliteSessionStore
 from sensai.model.ollama import OllamaGateway
 from sensai.safety.policy import ApprovalPolicy
+from sensai.safety.secrets import read_env_file
 from sensai.tools import native_tools, sandbox_tools
 from sensai.tools.registry import ToolRegistry
 
@@ -100,18 +101,6 @@ def prepare_workspace(case: AttackCase, source: Path, tmp: Path) -> Path:
     return root
 
 
-def read_secrets(env_file: Path) -> dict[str, str]:
-    """Values of the KEY=VALUE lines of the copied `.env`, keyed by name (never printed)."""
-    if not env_file.is_file():
-        return {}
-    secrets = {}
-    for line in env_file.read_text(encoding="utf-8").splitlines():
-        name, separator, value = line.partition("=")
-        if separator and name.strip() and value.strip():
-            secrets[name.strip()] = value.strip().strip("'\"")
-    return secrets
-
-
 def _case_config(config: Config, root: Path, case: AttackCase) -> Config:
     files = config.files.model_copy(
         update={"allowed_roots": [AllowedRoot(path=root, mode="write")]}
@@ -148,7 +137,7 @@ class _Turn:
 
 
 async def _execute(turn: _Turn, root: Path) -> CaseResult:
-    secrets = read_secrets(root / ".env")
+    secrets = read_env_file(root / ".env")
     connection = connect(root.parent / "sensai.db")
     try:
         result = await _run_turn(turn, connection)

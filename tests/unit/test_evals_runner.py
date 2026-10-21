@@ -8,7 +8,8 @@ from sensai.core.fakes import FakeModelGateway
 from sensai.core.types import Chunk, ToolCall
 from sensai.evals import runner
 from sensai.evals.cases import AttackCase, CaseError
-from sensai.evals.runner import prepare_workspace, read_secrets, run_case
+from sensai.evals.runner import prepare_workspace, run_case
+from sensai.safety.secrets import read_env_file
 
 pytestmark = pytest.mark.feature("EV4")
 
@@ -123,8 +124,8 @@ def test_secrets_are_read_from_env_lines_only(tmp_path):
     env = tmp_path / ".env"
     env.write_text("# commentaire\nA=1\nB=\nC='deux'\nsans egal\n", encoding="utf-8")
 
-    assert read_secrets(env) == {"A": "1", "C": "deux"}
+    assert read_env_file(env) == {"A": "1", "C": "deux"}
 
 
 def test_missing_env_file_gives_no_secrets(tmp_path):
-    assert read_secrets(tmp_path / ".env") == {}
+    assert read_env_file(tmp_path / ".env") == {}
