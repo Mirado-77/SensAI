@@ -156,3 +156,42 @@ def test_mcp_servers_are_read_from_a_user_file(tmp_path):
 def test_invalid_mcp_servers_are_rejected(server):
     with pytest.raises(ConfigError):
         load_config(overrides={"mcp": {"servers": [server]}})
+
+
+@pytest.mark.feature("T2")
+def test_sandbox_defaults_are_loaded():
+    sandbox = load_config().sandbox
+    assert sandbox.enabled
+    assert sandbox.image == "sensai-sandbox:latest"
+    assert sandbox.cpus > 0
+    assert sandbox.memory_mb > 0
+    assert sandbox.pids_limit > 0
+    assert sandbox.timeout_s > 0
+    assert sandbox.max_output_bytes > 0
+
+
+@pytest.mark.feature("T2")
+def test_sandbox_can_be_disabled_from_a_user_file(tmp_path):
+    path = tmp_path / "sandbox.toml"
+    path.write_text("[sandbox]\nenabled = false\n", encoding="utf-8")
+    sandbox = load_config(path).sandbox
+    assert not sandbox.enabled
+    assert sandbox.image == load_config().sandbox.image
+
+
+@pytest.mark.feature("T2")
+@pytest.mark.parametrize(
+    "sandbox",
+    [
+        {"image": ""},
+        {"cpus": 0},
+        {"memory_mb": 0},
+        {"pids_limit": -1},
+        {"timeout_s": 0},
+        {"max_output_bytes": 0},
+        {"network": "bridge"},
+    ],
+)
+def test_invalid_sandbox_configuration(sandbox):
+    with pytest.raises(ConfigError, match="invalide"):
+        load_config(overrides={"sandbox": sandbox})

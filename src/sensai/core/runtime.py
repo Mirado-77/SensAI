@@ -16,7 +16,8 @@ Event payloads (all events also carry `run_id`):
 - model.chunk: text
 - model.tool_call: call_id, name, args
 - model.usage: prompt_tokens, completion_tokens
-- approval.requested: call_id, tool, risk, preview
+- approval.requested: call_id, tool, risk, preview (the diff of the change when the tool provides
+  one, else the call as JSON)
 - approval.resolved: call_id, tool, approved
 - tool.started: call_id, tool, risk, args
 - tool.finished: call_id, tool, is_error, duration_ms, content
@@ -355,7 +356,7 @@ class AgentRuntime:
         return None
 
     async def _ask_user(self, ctx: RunContext, call_id: str, tool: Tool, call: ToolCall) -> bool:
-        preview = preview_call(tool.name, call.args)
+        preview = await self._preview(tool, call.args)
         request = ApprovalRequest(ctx.run_id, tool.name, tool.risk, preview, call.args)
         self._emit_tool(
             APPROVAL_REQUESTED, ctx, call_id, tool.name, risk=tool.risk, preview=preview
@@ -363,6 +364,18 @@ class AgentRuntime:
         approved = await self._deps.channel.confirm(request)
         self._emit_tool(APPROVAL_RESOLVED, ctx, call_id, tool.name, approved=approved)
         return approved
+
+    async def _preview(self, tool: Tool, args: dict[str, Any]) -> str:
+        build = getattr(tool, "preview", None)
+
+        if build is not None:
+            try:
+                text = await build(args)
+            except Exception:
+                text = None
+            if text:
+                return text
+        return preview_call(tool.name, args)
 
     async def _execute_tool(
         self, ctx: RunContext, call_id: str, tool: Tool, call: ToolCall

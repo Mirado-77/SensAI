@@ -29,7 +29,7 @@ from sensai.memory.sqlite_store import SqliteSessionStore
 from sensai.model.ollama import OllamaGateway
 from sensai.observability.journal import SqliteEventJournal
 from sensai.safety.policy import ApprovalPolicy
-from sensai.tools import native_tools
+from sensai.tools import native_tools, sandbox_tools
 from sensai.tools.mcp.servers import McpServers
 from sensai.tools.registry import ToolRegistry
 
@@ -135,6 +135,7 @@ async def run_chat(
         native = _native_tools_or_report(config, terminal)
         if native is None:
             return 2
+        native += await _sandbox_tools_or_report(config, terminal)
         async with McpServers(config.mcp) as mcp:
             registry = build_registry(native, mcp, terminal)
             deps = _build_deps(config, terminal, connection, gateway, registry)
@@ -224,6 +225,14 @@ def _native_tools_or_report(config: Config, terminal: Terminal) -> list[Tool] | 
     except ConfigError as exc:
         terminal.errors.print(Text(f"Erreur : {exc}", style="bold red"))
         return None
+
+
+async def _sandbox_tools_or_report(config: Config, terminal: Terminal) -> list[Tool]:
+    tools, reason = await sandbox_tools(config)
+    if reason is not None:
+        message = f"Attention : exécution de commandes désactivée (T2) : {reason}"
+        terminal.errors.print(Text(message, style="yellow"))
+    return tools
 
 
 def _build_deps(
