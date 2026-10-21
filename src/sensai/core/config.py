@@ -100,6 +100,14 @@ class SandboxConfig(_Section):
     timeout_s: int = Field(gt=0)
     max_output_bytes: int = Field(gt=0)
 
+
+class GuardsConfig(_Section):
+    """Input and output guards (EV2): injection check, secret redaction from `env_file`."""
+
+    enabled: bool
+    env_file: Path
+
+
 class Config(_Section):
     model: ModelConfig
     runtime: RuntimeConfig
@@ -111,6 +119,7 @@ class Config(_Section):
     files: FilesConfig
     mcp: McpConfig
     sandbox: SandboxConfig
+    guards: GuardsConfig
 
 
 def _read_toml(path: Path) -> dict[str, Any]:
