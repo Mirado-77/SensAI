@@ -93,6 +93,7 @@ class SandboxConfig(_Section):
     timeout_s: int = Field(gt=0)
     max_output_bytes: int = Field(gt=0)
 
+
 class Config(_Section):
     model: ModelConfig
     runtime: RuntimeConfig
