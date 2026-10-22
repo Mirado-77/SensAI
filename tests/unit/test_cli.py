@@ -205,10 +205,9 @@ def chat_setup(tmp_path, *lines, **overrides):
     # offered tools are the configured ones; test_react and test_questions turn them on.
     react = {"enabled": False, "max_plan_steps": 5}
     questions = {"enabled": False, "max_per_turn": 2}
-    defaults = {"storage": storage, "react": react, "questions": questions}
     sandbox = {"enabled": False}
-    overrides = {"storage": storage, "react": react, "sandbox": sandbox, **overrides}
-    config = load_config(overrides={**defaults, **sandbox, **overrides})
+    defaults = {"storage": storage, "react": react, "questions": questions, "sandbox": sandbox}
+    config = load_config(overrides={**defaults, **overrides})
     terminal, out, err = make_terminal(scripted(*lines))
     return config, terminal, out, err
 
