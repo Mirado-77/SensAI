@@ -10,6 +10,7 @@ from typing import Any
 from rich.text import Text
 
 from sensai.cli.channel import CliUserChannel
+from sensai.cli.fork import FORK_COMMAND, HISTORY_COMMAND, print_history, run_fork_command
 from sensai.cli.profile import (
     PROFILE_COMMAND,
     PROFILE_ID,
@@ -30,8 +31,8 @@ from sensai.model.ollama import OllamaGateway
 from sensai.observability.journal import SqliteEventJournal
 from sensai.safety.guards import install_guards
 from sensai.safety.policy import ApprovalPolicy
-from sensai.tools import native_tools, sandbox_tools, search_tools
 from sensai.safety.secrets import read_env_file
+from sensai.tools import native_tools, sandbox_tools, search_tools
 from sensai.tools.mcp.servers import McpServers
 from sensai.tools.registry import ToolRegistry
 
@@ -98,6 +99,10 @@ async def chat_loop(
             print_tools(terminal, registry)
         elif text.split(" ", 1)[0] == PROFILE_COMMAND:
             runtime.system_prompt = run_profile_command(store, terminal, text)
+        elif text == HISTORY_COMMAND:
+            print_history(store, terminal, session_id)
+        elif text.split(" ", 1)[0] == FORK_COMMAND:
+            session_id = run_fork_command(store, terminal, session_id, text)
         elif text:
             await run_interruptible(runtime.run_turn(session_id, text))
 
