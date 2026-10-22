@@ -122,4 +122,3 @@ async def test_cancel_stops_the_container_and_propagates(monkeypatch):
     with pytest.raises(asyncio.CancelledError):
         await task
     assert stopped == ["box"]
-

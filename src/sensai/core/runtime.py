@@ -7,7 +7,8 @@
 By default a turn makes a single model call. Features that need more (guardrails, summaries,
 caches) plug into `entry_hooks` / `exit_hooks` without changing the loop. With `[react]`
 enabled (A1), one structured planning call comes first and every action / observation of the
-tool loop is an event (see `sensai.core.react`).
+tool loop is an event (see `sensai.core.react`). With `[questions]` enabled (X4), the model
+can call `ask_user`, handled here through the UserChannel (see `sensai.core.questions`).
 
 Event payloads (all events also carry `run_id`):
 
@@ -20,9 +21,12 @@ Event payloads (all events also carry `run_id`):
 - approval.resolved: call_id, tool, approved
 - tool.started: call_id, tool, risk, args
 - tool.finished: call_id, tool, is_error, duration_ms, content
-- tool.failed: call_id, tool, error ("unknown tool", "invalid arguments", "denied" or the
-  exception)
+- tool.failed: call_id, tool, error ("unknown tool", "invalid arguments", "denied",
+  "too many questions" or the exception)
 - react.plan, react.action, react.observation: see `sensai.core.react`
+- question.requested, question.answered: see `sensai.core.questions`
+- guard.blocked: stage ("entry" or "tool"), reason, and tool for a tool output
+- guard.redacted: stage ("answer" or "tool"), count, and tool for a tool output
 - run.completed: session_id, steps, tool_calls
 - run.cancelled: session_id, partial
 - run.failed: session_id, error_type, error
@@ -34,15 +38,18 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field, replace
 from typing import Any, Literal
 
-from sensai.core.config import ReactConfig, RuntimeConfig
+from sensai.core.config import QuestionsConfig, ReactConfig, RuntimeConfig
 from sensai.core.contracts import EventSink, ModelGateway, SessionStore, Tool, UserChannel
-from sensai.core.errors import RunLimitError, SensaiError, StructuredOutputError
+from sensai.core.errors import GuardBlockedError, RunLimitError, SensaiError, StructuredOutputError
 from sensai.core.events import (
     APPROVAL_REQUESTED,
     APPROVAL_RESOLVED,
+    GUARD_BLOCKED,
     MODEL_CHUNK,
     MODEL_TOOL_CALL,
     MODEL_USAGE,
+    QUESTION_ANSWERED,
+    QUESTION_REQUESTED,
     REACT_ACTION,
     REACT_OBSERVATION,
     REACT_PLAN,
@@ -54,6 +61,13 @@ from sensai.core.events import (
     TOOL_FINISHED,
     TOOL_STARTED,
     make_event,
+)
+from sensai.core.questions import (
+    ASK_SPEC,
+    ASK_TOOL,
+    QUESTION_SCHEMA,
+    answer_result,
+    limit_result,
 )
 from sensai.core.react import make_plan
 from sensai.core.schema import schema_errors
@@ -92,9 +106,11 @@ class RunContext:
     user_text: str
     messages: list[Message] = field(default_factory=list)
     answer: str = ""
+    notices: list[tuple[str, dict[str, Any]]] = field(default_factory=list)
 
 
 Hook = Callable[[RunContext], Awaitable[None]]
+ResultHook = Callable[[RunContext, str, ToolResult], Awaitable[ToolResult]]
 
 
 @dataclass(frozen=True)
@@ -115,6 +131,7 @@ class _RunState:
     partial_text: str = ""
     steps: int = 0
     tool_calls: int = 0
+    questions: int = 0
     tokens: int = 0
 
 
@@ -127,15 +144,18 @@ class AgentRuntime:
         system_prompt: str | None = None,
         react: ReactConfig | None = None,
         max_repairs: int = 1,
+        questions: QuestionsConfig | None = None,
     ) -> None:
         self._deps = deps
         self._config = config
         self._react = react if react is not None and react.enabled else None
         self._max_repairs = max_repairs
+        self._questions = questions if questions is not None and questions.enabled else None
         self._model_name = model_name
         self.system_prompt = system_prompt
         self.entry_hooks: list[Hook] = []
         self.exit_hooks: list[Hook] = []
+        self.result_hooks: list[ResultHook] = []
 
     async def run_turn(self, session_id: str, user_text: str) -> RunResult:
         """Run one turn. Expected failures are returned; cancellation is re-raised.
@@ -169,13 +189,13 @@ class AgentRuntime:
 
     async def _execute(self, run_id: str, session_id: str, user_text: str, state: _RunState) -> str:
         ctx = RunContext(run_id, session_id, user_text)
-        await _run_hooks(self.entry_hooks, ctx)
+        await self._run_hooks(self.entry_hooks, ctx)
         self._build_context(ctx, state)
         if self._react is not None:
             await self._plan(ctx, state)
         assistant = await self._model_loop(ctx, state)
         ctx.answer = assistant.content
-        await _run_hooks(self.exit_hooks, ctx)
+        await self._run_hooks(self.exit_hooks, ctx)
         state.new_messages.append(replace(assistant, content=ctx.answer))
         return ctx.answer
 
@@ -189,7 +209,7 @@ class AgentRuntime:
     async def _plan(self, ctx: RunContext, state: _RunState) -> None:
         """Ask for a plan and give it to the model. A plan that never conforms is skipped."""
         assert self._react is not None
-        names = [tool.name for tool in self._deps.registry.tools()]
+        names = [spec.name for spec in self._tool_specs()]
         try:
             plan = await make_plan(
                 self._deps.gateway,
@@ -210,7 +230,7 @@ class AgentRuntime:
 
     async def _model_loop(self, ctx: RunContext, state: _RunState) -> Message:
         """Call the model until it answers without asking for a tool."""
-        specs = self._deps.registry.specs() or None
+        specs = self._tool_specs() or None
         while True:
             self._count_step(state)
             assistant, call_ids = await self._stream_model(ctx, state, specs)
@@ -227,6 +247,10 @@ class AgentRuntime:
     def _emit_react(self, type_: str, ctx: RunContext, state: _RunState, **payload: Any) -> None:
         if self._react is not None:
             self._emit(type_, ctx.run_id, step=state.steps, **payload)
+
+    def _tool_specs(self) -> list[ToolSpec]:
+        specs = self._deps.registry.specs()
+        return [*specs, ASK_SPEC] if self._questions is not None else specs
 
     async def _stream_model(
         self, ctx: RunContext, state: _RunState, specs: list[ToolSpec] | None
@@ -281,10 +305,14 @@ class AgentRuntime:
         results = []
         for call_id, call in zip(call_ids, assistant.tool_calls, strict=True):
             self._count_tool_call(state)
-            results.append((call, await self._run_tool(ctx, call_id, call)))
+            results.append((call, await self._run_tool(ctx, state, call_id, call)))
         return results
 
-    async def _run_tool(self, ctx: RunContext, call_id: str, call: ToolCall) -> ToolResult:
+    async def _run_tool(
+        self, ctx: RunContext, state: _RunState, call_id: str, call: ToolCall
+    ) -> ToolResult:
+        if call.name == ASK_TOOL and self._questions is not None:
+            return await self._ask_question(ctx, state, call_id, call)
         tool = self._deps.registry.get(call.name)
         if tool is None:
             self._emit_tool(TOOL_FAILED, ctx, call_id, call.name, error="unknown tool")
@@ -302,6 +330,24 @@ class AgentRuntime:
         if refusal is not None:
             return refusal
         return await self._execute_tool(ctx, call_id, tool, call)
+
+    async def _ask_question(
+        self, ctx: RunContext, state: _RunState, call_id: str, call: ToolCall
+    ) -> ToolResult:
+        assert self._questions is not None
+        errors = schema_errors(QUESTION_SCHEMA, call.args)
+        if errors:
+            self._emit_tool(TOOL_FAILED, ctx, call_id, ASK_TOOL, error="invalid arguments")
+            return _error(_invalid_arguments(ASK_TOOL, errors))
+        state.questions += 1
+        if state.questions > self._questions.max_per_turn:
+            self._emit_tool(TOOL_FAILED, ctx, call_id, ASK_TOOL, error="too many questions")
+            return limit_result(self._questions.max_per_turn)
+        question = {"question": call.args["question"], "options": call.args.get("options", [])}
+        self._emit(QUESTION_REQUESTED, ctx.run_id, call_id=call_id, **question)
+        answer = await self._deps.channel.ask(question)
+        self._emit(QUESTION_ANSWERED, ctx.run_id, call_id=call_id, answer=answer.get("answer", ""))
+        return answer_result(answer)
 
     async def _check_policy(
         self, ctx: RunContext, call_id: str, tool: Tool, call: ToolCall
@@ -348,6 +394,11 @@ class AgentRuntime:
             error = f"{type(exc).__name__}: {exc}"
             self._emit_tool(TOOL_FAILED, ctx, call_id, tool.name, error=error)
             return _error(f"Tool error: {error}")
+        try:
+            result = await self._guard_result(ctx, tool.name, result)
+        except GuardBlockedError as exc:
+            self._emit_tool(TOOL_FAILED, ctx, call_id, tool.name, error="blocked")
+            return _error(f"The output of {tool.name} was blocked: {exc.reason}.")
         duration_ms = (time.perf_counter() - started) * 1000
         details = {"is_error": result.is_error, "duration_ms": duration_ms}
         self._emit_tool(TOOL_FINISHED, ctx, call_id, tool.name, content=result.content, **details)
@@ -391,10 +442,35 @@ class AgentRuntime:
     def _emit(self, type_: str, run_id: str, **payload: Any) -> None:
         self._deps.sink.emit(make_event(type_, run_id, payload))
 
+    async def _run_hooks(self, hooks: list[Hook], ctx: RunContext) -> None:
+        for hook in hooks:
+            try:
+                await hook(ctx)
+            except GuardBlockedError as exc:
+                self._emit(GUARD_BLOCKED, ctx.run_id, stage=exc.stage, reason=exc.reason)
+                raise
+            finally:
+                self._flush_notices(ctx)
 
-async def _run_hooks(hooks: list[Hook], ctx: RunContext) -> None:
-    for hook in hooks:
-        await hook(ctx)
+    async def _guard_result(
+        self, ctx: RunContext, tool_name: str, result: ToolResult
+    ) -> ToolResult:
+        for hook in self.result_hooks:
+            try:
+                result = await hook(ctx, tool_name, result)
+            except GuardBlockedError as exc:
+                self._emit(
+                    GUARD_BLOCKED, ctx.run_id, stage=exc.stage, reason=exc.reason, tool=tool_name
+                )
+                raise
+            finally:
+                self._flush_notices(ctx)
+        return result
+
+    def _flush_notices(self, ctx: RunContext) -> None:
+        for type_, payload in ctx.notices:
+            self._emit(type_, ctx.run_id, **payload)
+        ctx.notices.clear()
 
 
 def _limit_error(maximum: int, unit: str) -> RunLimitError:
