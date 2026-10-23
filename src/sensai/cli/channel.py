@@ -51,4 +51,17 @@ class CliUserChannel:
         return answer.strip().lower() in _YES
 
     async def ask(self, question: dict[str, Any]) -> dict[str, Any]:
-        raise NotImplementedError("Les questions structurées ne sont pas encore prises en charge.")
+        """Print the question and its numbered options; a number picks an option."""
+        console = self._terminal.console
+        console.print(Text(f"Question: {question['question']}", style="bold cyan"))
+        options = question.get("options") or []
+        for index, option in enumerate(options, 1):
+            console.print(Text(f"  {index}. {option}"))
+        hint = f"[1-{len(options)} or text] " if options else ""
+        try:
+            answer = self._terminal.read_line(f"Answer {hint}> ").strip()
+        except EOFError:
+            return {"answer": ""}
+        if answer.isdigit() and 1 <= int(answer) <= len(options):
+            answer = options[int(answer) - 1]
+        return {"answer": answer}

@@ -28,8 +28,10 @@ from sensai.db.connection import connect
 from sensai.memory.sqlite_store import SqliteSessionStore
 from sensai.model.ollama import OllamaGateway
 from sensai.observability.journal import SqliteEventJournal
+from sensai.safety.guards import install_guards
 from sensai.safety.policy import ApprovalPolicy
-from sensai.tools import native_tools, sandbox_tools, web_tools
+from sensai.safety.secrets import read_env_file
+from sensai.tools import native_tools, sandbox_tools, search_tools, web_tools
 from sensai.tools.mcp.servers import McpServers
 from sensai.tools.registry import ToolRegistry
 
@@ -136,6 +138,7 @@ async def run_chat(
         if native is None:
             return 2
         native += await _sandbox_tools_or_report(config, terminal)
+        native += search_tools(config, connection)
         native += web_tools(config)
         async with McpServers(config.mcp) as mcp:
             registry = build_registry(native, mcp, terminal)
@@ -148,7 +151,9 @@ async def run_chat(
                 prompt,
                 react=config.react,
                 max_repairs=config.structured.max_repairs,
+                questions=config.questions,
             )
+            install_guards(runtime, config.guards, read_env_file(config.guards.env_file))
             terminal.console.print(Text(_banner(config, registry), "dim"))
             await chat_loop(runtime, session_id, terminal, store, registry)
         return 0

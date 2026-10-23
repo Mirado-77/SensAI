@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from sensai.core.errors import ConfigError
 from sensai.core.types import Decision, Risk
@@ -42,6 +42,13 @@ class ReactConfig(_Section):
 
     enabled: bool
     max_plan_steps: int = Field(gt=0, le=10)
+
+
+class QuestionsConfig(_Section):
+    """Structured questions (X4): the model may ask the user when the request is ambiguous."""
+
+    enabled: bool
+    max_per_turn: int = Field(gt=0, le=5)
 
 
 class StorageConfig(_Section):
@@ -104,16 +111,42 @@ class WebConfig(_Section):
     max_result_chars: int = Field(gt=0)
 
 
+class RagConfig(_Section):
+    """Codebase retrieval (R1): `sensai index` embeds chunks of lines, `search_code` finds them."""
+
+    enabled: bool
+    embed_model: str = Field(min_length=1)
+    chunk_lines: int = Field(gt=0)
+    overlap: int = Field(ge=0)
+    top_k: int = Field(gt=0, le=20)
+
+    @model_validator(mode="after")
+    def _overlap_below_chunk(self) -> "RagConfig":
+        if self.overlap >= self.chunk_lines:
+            raise ValueError("overlap must be smaller than chunk_lines")
+        return self
+
+
+class GuardsConfig(_Section):
+    """Input and output guards (EV2): injection check, secret redaction from `env_file`."""
+
+    enabled: bool
+    env_file: Path
+
+
 class Config(_Section):
     model: ModelConfig
     runtime: RuntimeConfig
     structured: StructuredConfig
     react: ReactConfig
+    questions: QuestionsConfig
     storage: StorageConfig
     policy: PolicyConfig
     files: FilesConfig
     mcp: McpConfig
     sandbox: SandboxConfig
+    rag: RagConfig
+    guards: GuardsConfig
     web: WebConfig
 
 

@@ -15,6 +15,7 @@ from rich.text import Text
 
 from sensai.cli.ask import run_ask
 from sensai.cli.chat import LAST_SESSION, print_sessions, run_chat
+from sensai.cli.index import run_index
 from sensai.cli.terminal import Terminal
 from sensai.core.config import Config, load_config
 from sensai.core.errors import ConfigError
@@ -45,6 +46,9 @@ def build_parser() -> argparse.ArgumentParser:
     _add_common_options(ask)
     ask.add_argument("--schema", type=Path, required=True, help="JSON Schema file of the answer")
     ask.add_argument("question", nargs="+", help="the question, or - to read it from stdin")
+    index = commands.add_parser("index", help="embed the codebase for search_code (R1)")
+    _add_common_options(index)
+    index.add_argument("paths", nargs="*", help="folders to index (default: the allowed roots)")
     return parser
 
 
@@ -68,6 +72,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
     if args.command == "ask":
         return _run(run_ask(config, terminal, args.schema, _question(args.question)), terminal)
+    if args.command == "index":
+        return _run(run_index(config, terminal, args.paths), terminal)
     if args.command == "sessions":
         return print_sessions(config, terminal)
     return _run(run_chat(config, terminal, resume=args.resume), terminal)

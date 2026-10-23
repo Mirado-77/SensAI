@@ -39,14 +39,16 @@ def build(
     tools=(),
     rules=None,
     approvals=(),
+    answers=(),
     system_prompt=None,
     react=None,
+    questions=None,
     **limits,
 ) -> Setup:
     gateway = gateway if gateway is not None else FakeModelGateway(*scripts)
     store = InMemorySessionStore()
     sink = CollectingEventSink()
-    channel = FakeUserChannel(approvals=approvals)
+    channel = FakeUserChannel(approvals=approvals, answers=answers)
     deps = RuntimeDeps(
         gateway=gateway,
         store=store,
@@ -56,7 +58,9 @@ def build(
         policy=ApprovalPolicy({**RULES, **(rules or {})}),
     )
     config = RuntimeConfig(**{**LIMITS, **limits})
-    runtime = AgentRuntime(deps, config, "test-model", system_prompt, react=react)
+    runtime = AgentRuntime(
+        deps, config, "test-model", system_prompt, react=react, questions=questions
+    )
     return Setup(runtime, gateway, store, sink, channel, store.create_session())
 
 

@@ -199,22 +199,23 @@ async def test_confirm_refuses_at_end_of_input_and_shows_the_preview():
     assert out.getvalue() == 'Approval required (write): write_file({"path": "a.py"})\n'
 
 
-async def test_ask_is_not_supported_yet():
-    terminal, _, _ = make_terminal()
-    with pytest.raises(NotImplementedError):
-        await CliUserChannel(terminal).ask({"question": "?"})
-
-
 def chat_setup(tmp_path, *lines, **overrides):
     storage = {"db_path": str(tmp_path / "sensai.db")}
-    # A1 planning is off here so that each script is one model call; test_react turns it on.
+    # A1 planning and X4 questions are off here so that each script is one model call and the
+    # offered tools are the configured ones; test_react and test_questions turn them on.
     react = {"enabled": False, "max_plan_steps": 5}
-    # T2 is off so that no test depends on Docker; test_sandbox_tools turns it on.
+    questions = {"enabled": False, "max_per_turn": 2}
     sandbox = {"enabled": False}
     # T3 is off so that no test depends on a SearXNG instance; test_web_search covers it.
     web = {"enabled": False}
-    overrides = {"storage": storage, "react": react, "sandbox": sandbox, "web": web, **overrides}
-    config = load_config(overrides=overrides)
+    defaults = {
+        "storage": storage,
+        "react": react,
+        "questions": questions,
+        "sandbox": sandbox,
+        "web": web,
+    }
+    config = load_config(overrides={**defaults, **overrides})
     terminal, out, err = make_terminal(scripted(*lines))
     return config, terminal, out, err
 
