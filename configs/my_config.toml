@@ -1,0 +1,83 @@
+# Default SENSAI configuration.
+# A file passed with --config only needs the keys to change.
+
+[model]
+# Ollama model. Provisional: to be decided with the team (size, speed, tool calling).
+name = "qwen3.5:9b"
+host = "http://localhost:11434"
+timeout_s = 120  # maximum time without a response from Ollama
+
+[runtime]
+# Limits of one AgentRuntime turn.
+max_steps = 8
+max_tool_calls = 8
+timeout_s = 300
+max_tokens = 32768  # cumulative tokens (prompt + completion) over one turn
+
+[react]
+# Bounded ReAct loop (A1): before acting, the model writes a short plan (structured output), then
+# each action and observation is an event. The loop stays bounded by [runtime] max_steps.
+enabled = true
+max_plan_steps = 5
+
+[structured]
+# Structured output (T5): repair attempts when the JSON does not match the schema.
+max_repairs = 1
+
+[storage]
+db_path = "~/.sensai/sensai.db"
+
+[policy]
+# Before a tool runs, by risk level: "allow", "ask" (user approval) or "deny".
+read = "allow"
+write = "ask"
+exec = "ask"
+
+[files]
+max_read_bytes = 65536
+max_write_bytes = 1048576
+max_list_entries = 200
+
+[[files.allowed_roots]]
+path="/home/phil/TEK3/project/aia/sensai/G-AIA-500-PAR-5-1-sensai-3/demo-repo"
+"mode"="write"
+
+
+[mcp]
+# MCP servers (T1), launched over stdio when the chat starts. A server that fails to start is
+# reported and skipped. `risk`: "read", "write", "exec" (the policy above applies) or "auto"
+# (the server's readOnlyHint decides between "read" and "exec").
+timeout_s = 30  # maximum time for one MCP request
+
+# Our own server: Python code navigation inside one root.
+# [[mcp.servers]]
+# name = "code"
+# command = "sensai-mcp"
+# args = ["--root", "demo-repo"]
+# risk = "read"
+
+# An existing server: the official filesystem server, limited to the demo repository
+# (requires Node.js; tested in tests/integration/test_mcp_existing_server.py).
+# [[mcp.servers]]
+# name = "fs"
+# command = "npx"
+# args = ["-y", "@modelcontextprotocol/server-filesystem@2026.8.31", "demo-repo"]
+# risk = "auto"
+
+[sandbox]
+enabled = true
+image = "sensai-sandbox:latest"
+cpus = 1.0
+memory_mb = 512
+pids_limit = 128
+timeout_s = 60
+max_output_bytes = 16384
+
+
+[web]
+enabled = true
+# Local SearXNG instance started with `make searxng` (no API key, no quota).
+base_url = "http://localhost:8080"
+max_results = 5
+timeout_s = 10
+max_result_chars = 6000

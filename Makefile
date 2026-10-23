@@ -24,6 +24,9 @@ test-integration:
 ollama:
 	./docker/ollama/run-ollama.sh
 
+searxng:
+	docker compose -f docker/searxng/docker-compose.yml up -d
+
 chat:
 	$(BIN)/sensai chat $(ARGS)
 

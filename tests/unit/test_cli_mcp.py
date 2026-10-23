@@ -20,7 +20,9 @@ def chat_setup(tmp_path, *lines, **overrides):
     storage = {"db_path": str(tmp_path / "sensai.db")}
     # A1 planning is off here so that each script is one model call; test_react turns it on.
     react = {"enabled": False, "max_plan_steps": 5}
-    config = load_config(overrides={"storage": storage, "react": react, **overrides})
+    # T3 is off so that no test depends on a SearXNG instance; test_web_search covers it.
+    web = {"enabled": False}
+    config = load_config(overrides={"storage": storage, "react": react, "web": web, **overrides})
     out, err = io.StringIO(), io.StringIO()
     remaining = iter(lines)
 

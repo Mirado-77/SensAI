@@ -29,7 +29,7 @@ from sensai.memory.sqlite_store import SqliteSessionStore
 from sensai.model.ollama import OllamaGateway
 from sensai.observability.journal import SqliteEventJournal
 from sensai.safety.policy import ApprovalPolicy
-from sensai.tools import native_tools, sandbox_tools
+from sensai.tools import native_tools, sandbox_tools, web_tools
 from sensai.tools.mcp.servers import McpServers
 from sensai.tools.registry import ToolRegistry
 
@@ -136,6 +136,7 @@ async def run_chat(
         if native is None:
             return 2
         native += await _sandbox_tools_or_report(config, terminal)
+        native += web_tools(config)
         async with McpServers(config.mcp) as mcp:
             registry = build_registry(native, mcp, terminal)
             deps = _build_deps(config, terminal, connection, gateway, registry)

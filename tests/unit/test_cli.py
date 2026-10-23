@@ -211,7 +211,9 @@ def chat_setup(tmp_path, *lines, **overrides):
     react = {"enabled": False, "max_plan_steps": 5}
     # T2 is off so that no test depends on Docker; test_sandbox_tools turns it on.
     sandbox = {"enabled": False}
-    overrides = {"storage": storage, "react": react, "sandbox": sandbox, **overrides}
+    # T3 is off so that no test depends on a SearXNG instance; test_web_search covers it.
+    web = {"enabled": False}
+    overrides = {"storage": storage, "react": react, "sandbox": sandbox, "web": web, **overrides}
     config = load_config(overrides=overrides)
     terminal, out, err = make_terminal(scripted(*lines))
     return config, terminal, out, err

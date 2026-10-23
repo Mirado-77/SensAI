@@ -69,3 +69,11 @@ memory_mb = 512
 pids_limit = 128
 timeout_s = 60
 max_output_bytes = 16384
+
+[web]
+enabled = true
+# Local SearXNG instance started with `make searxng` (no API key, no quota).
+base_url = "http://localhost:8080"
+max_results = 5
+timeout_s = 10
+max_result_chars = 6000

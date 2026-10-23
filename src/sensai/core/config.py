@@ -93,6 +93,17 @@ class SandboxConfig(_Section):
     timeout_s: int = Field(gt=0)
     max_output_bytes: int = Field(gt=0)
 
+
+class WebConfig(_Section):
+    """Web search (T3) through a self-hosted SearXNG instance with its JSON format enabled."""
+
+    enabled: bool
+    base_url: str = Field(min_length=1)
+    max_results: int = Field(gt=0, le=20)
+    timeout_s: float = Field(gt=0)
+    max_result_chars: int = Field(gt=0)
+
+
 class Config(_Section):
     model: ModelConfig
     runtime: RuntimeConfig
@@ -103,6 +114,7 @@ class Config(_Section):
     files: FilesConfig
     mcp: McpConfig
     sandbox: SandboxConfig
+    web: WebConfig
 
 
 def _read_toml(path: Path) -> dict[str, Any]:
