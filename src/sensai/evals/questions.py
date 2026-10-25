@@ -13,6 +13,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from sensai.core.config import AllowedRoot, Config
 from sensai.core.contracts import ModelGateway, Tool
 from sensai.core.errors import ModelError
+from sensai.core.events import PROMPT_EXAMPLES
+from sensai.core.fewshots import FewShots, fewshots_from
 from sensai.core.prompts import PromptVersion, load_version
 from sensai.db.connection import connect
 from sensai.evals.judge import requested_calls
@@ -40,6 +42,7 @@ class Answer:
     answer: str = ""
     calls: list[str] = field(default_factory=list)
     error: str | None = None
+    examples: list[str] = field(default_factory=list)
 
 
 async def answer_questions(
@@ -54,6 +57,7 @@ async def answer_questions(
     answers, the prompt version label and notes on the setup (index skipped, for instance)."""
     model = gateway or OllamaGateway(config.model.host, config.model.name, config.model.timeout_s)
     version = load_version(config.prompts.system) if config.prompts.system else None
+    fewshots = fewshots_from(config.prompts.examples)
     with tempfile.TemporaryDirectory(prefix="ev1-") as tmp:
         root = Path(tmp) / "repo"
         shutil.copytree(source, root, ignore=IGNORED)
@@ -70,7 +74,9 @@ async def answer_questions(
             answers = []
             for number, case in enumerate(cases, 1):
                 progress(f"[{number}/{len(cases)}] {case.id} : réponse de l'agent")
-                answers.append(await _answer(case, run_config, model, tools, store, version))
+                answers.append(
+                    await _answer(case, run_config, model, tools, store, version, fewshots)
+                )
         finally:
             connection.close()
     return answers, version.label if version else None, notes
@@ -105,6 +111,7 @@ async def _answer(
     tools: list[Tool],
     store: SqliteSessionStore,
     version: PromptVersion | None,
+    fewshots: FewShots | None,
 ) -> Answer:
     if case.timeout_s is not None:
         config = config.model_copy(
@@ -114,7 +121,10 @@ async def _answer(
     runtime = build_runtime(config, gateway, tools, recorder, store)
     runtime.system_prompt = version.text if version else None
     runtime.prompt_version = version.label if version else None
+    runtime.fewshots = fewshots
     result = await runtime.run_turn(store.create_session(), case.question)
+    events = recorder.events
+    examples = [id_ for e in events if e.type == PROMPT_EXAMPLES for id_ in e.payload["examples"]]
     return Answer(
-        case, result.status, result.answer, requested_calls(recorder.events), result.error
+        case, result.status, result.answer, requested_calls(events), result.error, examples
     )

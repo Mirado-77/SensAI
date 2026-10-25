@@ -31,6 +31,12 @@ class RunInfo:
     prompt_version: str | None
     when: datetime
     notes: list[str]
+    examples: int = 0  # few-shot examples per question (A7)
+
+    @property
+    def variant(self) -> str:
+        """What was evaluated besides the model: the prompt version and the few-shots."""
+        return f"{self.prompt_version or 'aucune'} + {self.examples} exemples"
 
 
 def summarize(results: list[GradedAnswer]) -> dict:
@@ -59,6 +65,8 @@ def to_json(results: list[GradedAnswer], info: RunInfo) -> str:
         "model": info.model,
         "judge_model": info.judge_model,
         "prompt_version": info.prompt_version,
+        "examples": info.examples,
+        "variant": info.variant,
         "date": info.when.isoformat(timespec="seconds"),
         "notes": info.notes,
         "summary": summarize(results),
@@ -75,6 +83,7 @@ def to_markdown(results: list[GradedAnswer], info: RunInfo) -> str:
         f"- Modèle : `{info.model}`",
         f"- Juge : `{info.judge_model}`",
         f"- Version de prompt : `{info.prompt_version or 'aucune'}`",
+        f"- Few-shots : {info.examples} exemples au plus par question",
         f"- Date : {info.when:%Y-%m-%d %H:%M}",
         f"- Questions : {summary['total']}",
         f"- Score moyen : {_score(summary['mean_score'])}",
@@ -108,6 +117,7 @@ def _question_json(result: GradedAnswer) -> dict:
         "score": grade.score if grade else None,
         "reason": grade.reason if grade else "le juge n'a pas produit de note valide",
         "calls": answer.calls,
+        "examples": answer.examples,
         "answer": answer.answer[:EXCERPT_CHARS],
     }
 

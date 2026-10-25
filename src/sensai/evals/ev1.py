@@ -25,7 +25,8 @@ DEFAULT_OUT = Path("evals/reports")
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
-        overrides = {"prompts": {"system": args.prompt}} if args.prompt is not None else None
+        prompts = {"system": args.prompt, "examples": args.examples}
+        overrides = {"prompts": {k: v for k, v in prompts.items() if v is not None}}
         config = load_config(args.config, overrides=overrides)
         cases = load_cases(args.questions, QuestionCase)
     except (ConfigError, SensaiError) as exc:
@@ -87,7 +88,8 @@ async def run(
             config.runtime.timeout_s,
         )
         results.append(GradedAnswer(answer, grade))
-    return results, RunInfo(model.name, judge_model, version, when, notes)
+    info = RunInfo(model.name, judge_model, version, when, notes, config.prompts.examples)
+    return results, info
 
 
 def _progress(message: str) -> None:
@@ -100,6 +102,9 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT, help="dossier des rapports")
     parser.add_argument("--config", type=Path, default=None, help="fichier de configuration")
     parser.add_argument("--prompt", default=None, help="version de prompt à évaluer (A4)")
+    parser.add_argument(
+        "--examples", type=int, default=None, help="few-shots par question (A7), 0 = aucun"
+    )
     parser.add_argument("--judge-model", default=None, help="modèle du juge (défaut : le modèle)")
     parser.add_argument("--only", action="append", default=[], help="ne lancer que ce cas")
     parser.add_argument("--no-index", action="store_true", help="sans search_code (sans index)")
