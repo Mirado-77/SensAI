@@ -143,6 +143,16 @@ async def test_a4_prompts_stats_compares_the_recorded_runs(tmp_path, capsys):
     assert "version" in table and load_version("v2").label in table
 
 
+def test_a4_prompts_stats_reports_an_unusable_database(tmp_path, capsys):
+    blocker = tmp_path / "file"
+    blocker.write_text("", encoding="utf-8")
+    path = tmp_path / "c.toml"
+    path.write_text(f'[storage]\ndb_path = "{blocker / "sensai.db"}"\n', encoding="utf-8")
+
+    assert main(["prompts", "--config", str(path), "stats"]) == 2
+    assert "base de données inutilisable" in capsys.readouterr().err
+
+
 @pytest.mark.parametrize("name", ["../x", "v 1"])
 def test_a4_invalid_names_are_rejected_by_the_config(name):
     with pytest.raises(ConfigError):
