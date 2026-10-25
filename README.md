@@ -43,6 +43,8 @@ sensai> Phil
 | an empty line | ignored, the model is not called |
 | `Ctrl-C` during an answer | stops the generation and returns to the prompt; the text received so far is kept in the history |
 | `/tools` | list the tools the model can call, with their risk level |
+| `/history` | list the messages of the current branch, numbered; an interrupted answer is marked |
+| `/fork <n>` | continue in a new session from message `n` of `/history`; the original session is kept |
 | `/profile` | show your profile; `/profile instructions <text>`, `/profile set <key> <value>`, `/profile unset <key>`, `/profile clear` edit it |
 | `/exit`, `/quit`, `Ctrl-D` or `Ctrl-C` at the prompt | quit |
 
@@ -254,6 +256,7 @@ file, one migration per pull request. Migrations are applied when the database i
 | T1 | MCP: hand-written stdio client, our own server `sensai-mcp`, existing servers by configuration, same permissions as native tools | done ([user stories](docs/user-stories/T1.md)) |
 | M1 | Session persistence and user profile: `sensai sessions`, `sensai chat --resume`, `/profile` sent at every turn | done ([user stories](docs/user-stories/M1.md)) |
 | A4 | Versioned system prompts: one file per version, active version in config or `/prompt` in the chat, version recorded on every run, `sensai prompts list`, `diff` and `stats` to compare and roll back | done ([user stories](docs/user-stories/A4.md)) |
+| X2 | Interruption and fork: `Ctrl-C` stops the answer and keeps the partial text as interrupted, `/history` and `/fork <n>` branch the conversation into a new session | done ([user stories](docs/user-stories/X2.md)) |
 | X4 | Structured questions: when the request is ambiguous the model asks one short question with numbered options, the answer goes back to it and is saved | done ([user stories](docs/user-stories/X4.md)) |
 | A1 | Bounded ReAct loop: short structured plan shown before acting, one event per action and observation, bounded by `max_steps` | done ([user stories](docs/user-stories/A1.md)) |
 | T5 | Structured output: JSON validated against a schema with one repair attempt (`sensai ask --schema`), tool arguments validated before any execution | done ([user stories](docs/user-stories/T5.md)) |

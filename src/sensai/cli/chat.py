@@ -10,6 +10,7 @@ from typing import Any
 from rich.text import Text
 
 from sensai.cli.channel import CliUserChannel
+from sensai.cli.fork import FORK_COMMAND, HISTORY_COMMAND, print_history, run_fork_command
 from sensai.cli.profile import (
     PROFILE_COMMAND,
     PROFILE_ID,
@@ -107,6 +108,10 @@ async def chat_loop(
             prompt = prompt or ChatPrompt(None)
             run_prompt_command(prompt, terminal, text)
             prompt.apply(runtime)
+        elif text == HISTORY_COMMAND:
+            print_history(store, terminal, session_id)
+        elif text.split(" ", 1)[0] == FORK_COMMAND:
+            session_id = run_fork_command(store, terminal, session_id, text)
         elif text:
             await run_interruptible(runtime.run_turn(session_id, text))
 

@@ -121,6 +121,8 @@ class RagConfig(_Section):
         if self.overlap >= self.chunk_lines:
             raise ValueError("overlap must be smaller than chunk_lines")
         return self
+
+
 class GuardsConfig(_Section):
     """Input and output guards (EV2): injection check, secret redaction from `env_file`."""
 
