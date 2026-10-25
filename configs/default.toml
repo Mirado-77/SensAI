@@ -103,3 +103,15 @@ base_url = "http://localhost:8080"
 max_results = 5
 timeout_s = 10
 max_result_chars = 6000
+
+[scheduler]
+# Scheduled tasks (X5): `sensai schedule` runs them at their interval, in the sandbox (T2).
+# Only the commands of this list, or those approved with allow_command, can be scheduled.
+# Each command is an argument list, matched exactly.
+enabled = true
+min_interval_minutes = 5
+sync_interval_s = 30  # how often the scheduler reads the tasks saved by the chat
+allowed_commands = [
+    ["pytest", "-q"],
+    ["ruff", "check", "."],
+]
