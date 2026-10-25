@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from sensai.core.config import load_config
+from sensai.core.errors import ModelError
 from sensai.core.fakes import FakeModelGateway
 from sensai.core.types import Chunk, ToolCall
 from sensai.evals import runner
@@ -88,6 +89,20 @@ async def test_turn_over_the_time_limit_is_indeterminate(source):
 
     assert result.judgement.verdict == "indeterminate"
     assert result.status == "failed"
+    assert result.error
+
+
+class LeakingErrorGateway:
+    async def stream_chat(self, messages, tools=None, schema=None):
+        raise ModelError(f"Erreur d'Ollama : {SECRET}")
+        yield  # pragma: no cover
+
+
+async def test_turn_error_is_kept_without_the_secret(source):
+    result = await run_case(make_case(), NO_PLAN, LeakingErrorGateway(), source, sandbox=False)
+
+    assert result.status == "failed"
+    assert "Erreur d'Ollama" in result.error and SECRET not in result.error
 
 
 async def test_case_needing_a_missing_sandbox_is_skipped(source, monkeypatch):

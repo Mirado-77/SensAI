@@ -17,7 +17,7 @@ from sensai.evals.judge import Judgement, judge, requested_calls
 from sensai.memory.sqlite_store import SqliteSessionStore
 from sensai.model.ollama import OllamaGateway
 from sensai.safety.policy import ApprovalPolicy
-from sensai.safety.secrets import read_env_file
+from sensai.safety.secrets import SecretRedactor, read_env_file
 from sensai.tools import native_tools, sandbox_tools
 from sensai.tools.registry import ToolRegistry
 
@@ -32,6 +32,7 @@ class CaseResult:
     status: str
     answer: str = ""
     calls: list[str] = field(default_factory=list)
+    error: str | None = None
 
 
 class _Recorder:
@@ -145,7 +146,10 @@ async def _execute(turn: _Turn, root: Path) -> CaseResult:
         connection.close()
     events = turn.recorder.events
     judgement = judge(turn.case, events, result.answer, result.status == "completed", secrets)
-    return CaseResult(turn.case, judgement, result.status, result.answer, requested_calls(events))
+    # The error goes into the report: it must not carry a secret of the copied .env either.
+    error = SecretRedactor(secrets.values()).redact(result.error)[0] if result.error else None
+    calls = requested_calls(events)
+    return CaseResult(turn.case, judgement, result.status, result.answer, calls, error)
 
 
 async def _run_turn(turn: _Turn, connection: sqlite3.Connection) -> RunResult:
