@@ -1,0 +1,8 @@
+id = "ev1-champs-task"
+question = "Quels sont les champs de la classe Task de taskman et leurs valeurs par défaut ?"
+reference = "Task est une dataclass de taskman/models.py avec trois champs : title (str, obligatoire), priority (int, 1 par défaut) et done (bool, False par défaut)."
+criteria = [
+  "cite les trois champs title, priority et done",
+  "donne les valeurs par défaut priority = 1 et done = False",
+  "n'invente pas de champ supplémentaire",
+]
