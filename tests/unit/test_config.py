@@ -83,3 +83,115 @@ def test_policy_rejects_an_unknown_decision():
 def test_storage_path_is_a_path():
     config = load_config(overrides={"storage": {"db_path": "/tmp/sensai-test.db"}})
     assert config.storage.db_path == Path("/tmp/sensai-test.db")
+
+
+def test_files_invalid_mode():
+    with pytest.raises(ConfigError, match="invalide"):
+        load_config(overrides={"files": {"allowed_roots": [{"path": ".", "mode": "exec"}]}})
+
+
+def test_files_valid_root():
+    root = {"path": "/tmp/demo", "mode": "write"}
+    config = load_config(overrides={"files": {"allowed_roots": [root]}})
+    assert config.files.allowed_roots[0].path == Path("/tmp/demo")
+    assert config.files.allowed_roots[0].mode == "write"
+
+
+def test_files_have_no_root_by_default():
+    config = load_config()
+    assert config.files.allowed_roots == []
+
+
+def test_files_rejects_a_zero_limit():
+    with pytest.raises(ConfigError, match="invalide"):
+        load_config(overrides={"files": {"max_read_bytes": 0}})
+
+
+@pytest.mark.feature("T5")
+def test_structured_output_allows_one_repair_by_default():
+    assert load_config().structured.max_repairs == 1
+
+
+@pytest.mark.feature("T5")
+@pytest.mark.parametrize("value", [-1, 4])
+def test_structured_max_repairs_is_bounded(value):
+    with pytest.raises(ConfigError):
+        load_config(overrides={"structured": {"max_repairs": value}})
+
+
+@pytest.mark.feature("T1")
+def test_no_mcp_server_is_started_by_default():
+    config = load_config()
+    assert config.mcp.servers == []
+    assert config.mcp.timeout_s > 0
+
+
+@pytest.mark.feature("T1")
+def test_mcp_servers_are_read_from_a_user_file(tmp_path):
+    path = tmp_path / "mcp.toml"
+    path.write_text(
+        '[[mcp.servers]]\nname = "git"\ncommand = "uvx"\n'
+        'args = ["mcp-server-git"]\nrisk = "auto"\n',
+        encoding="utf-8",
+    )
+    [server] = load_config(path).mcp.servers
+    assert (server.name, server.command, server.args, server.risk) == (
+        "git",
+        "uvx",
+        ["mcp-server-git"],
+        "auto",
+    )
+    assert server.enabled
+
+
+@pytest.mark.feature("T1")
+@pytest.mark.parametrize(
+    "server",
+    [
+        {"name": "bad name", "command": "x"},
+        {"name": "ok", "command": ""},
+        {"name": "ok", "command": "x", "risk": "maybe"},
+    ],
+)
+def test_invalid_mcp_servers_are_rejected(server):
+    with pytest.raises(ConfigError):
+        load_config(overrides={"mcp": {"servers": [server]}})
+
+
+@pytest.mark.feature("T2")
+def test_sandbox_defaults_are_loaded():
+    sandbox = load_config().sandbox
+    assert sandbox.enabled
+    assert sandbox.image == "sensai-sandbox:latest"
+    assert sandbox.cpus > 0
+    assert sandbox.memory_mb > 0
+    assert sandbox.pids_limit > 0
+    assert sandbox.timeout_s > 0
+    assert sandbox.max_output_bytes > 0
+
+
+@pytest.mark.feature("T2")
+def test_sandbox_can_be_disabled_from_a_user_file(tmp_path):
+    path = tmp_path / "sandbox.toml"
+    path.write_text("[sandbox]\nenabled = false\n", encoding="utf-8")
+    sandbox = load_config(path).sandbox
+    assert not sandbox.enabled
+    assert sandbox.image == load_config().sandbox.image
+
+
+@pytest.mark.feature("T2")
+@pytest.mark.parametrize(
+    "sandbox",
+    [
+        {"image": ""},
+        {"cpus": 0},
+        {"memory_mb": 0},
+        {"pids_limit": -1},
+        {"timeout_s": 0},
+        {"max_output_bytes": 0},
+        {"network": "bridge"},
+    ],
+)
+def test_invalid_sandbox_configuration(sandbox):
+    with pytest.raises(ConfigError, match="invalide"):
+        load_config(overrides={"sandbox": sandbox})

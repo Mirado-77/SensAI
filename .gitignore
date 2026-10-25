@@ -8,3 +8,4 @@ dist/
 .env
 *.db
 .sensai/
+evals/reports/

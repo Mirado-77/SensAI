@@ -51,6 +51,33 @@ class OllamaGateway:
                 yield response
 
 
+class OllamaEmbedder:
+    """Embeddings of texts with `/api/embed` (R1)."""
+
+    def __init__(self, host: str, model: str, timeout_s: float) -> None:
+        self._host = host.rstrip("/")
+        self.model = model
+        self._timeout = httpx.Timeout(timeout_s)
+
+    async def embed(self, texts: list[str]) -> list[list[float]]:
+        payload = {"model": self.model, "input": texts}
+        try:
+            async with httpx.AsyncClient(base_url=self._host, timeout=self._timeout) as client:
+                response = await client.post("/api/embed", json=payload)
+        except httpx.TransportError as exc:
+            detail = str(exc) or type(exc).__name__
+            raise ModelConnectionError(f"Ollama est injoignable à {self._host} : {detail}") from exc
+        if response.status_code != 200:
+            raise await _status_error(response, self.model)
+        try:
+            embeddings = response.json()["embeddings"]
+        except (json.JSONDecodeError, KeyError, TypeError) as exc:
+            raise _invalid_response(response.text) from exc
+        if not isinstance(embeddings, list) or len(embeddings) != len(texts):
+            raise _invalid_response(response.text)
+        return embeddings
+
+
 def _build_payload(
     model: str,
     messages: list[Message],

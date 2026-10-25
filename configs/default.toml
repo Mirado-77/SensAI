@@ -3,7 +3,7 @@
 
 [model]
 # Ollama model. Provisional: to be decided with the team (size, speed, tool calling).
-name = "phi4:latest"
+name = "qwen3.5:9b"
 host = "http://localhost:11434"
 timeout_s = 120  # maximum time without a response from Ollama
 
@@ -11,8 +11,29 @@ timeout_s = 120  # maximum time without a response from Ollama
 # Limits of one AgentRuntime turn.
 max_steps = 8
 max_tool_calls = 8
-timeout_s = 300
+timeout_s = 900
 max_tokens = 32768  # cumulative tokens (prompt + completion) over one turn
+
+[structured]
+# Structured output (T5): repair attempts when the JSON does not match the schema.
+max_repairs = 1
+
+[react]
+# Bounded ReAct loop (A1): before acting, the model writes a short plan (structured output), then
+# each action and observation is an event. The loop stays bounded by [runtime] max_steps.
+enabled = true
+max_plan_steps = 5
+
+[questions]
+# Structured questions (X4): the model gets an `ask_user` tool to ask one short question, with
+# options, when the request is ambiguous. Each question counts as a tool call.
+enabled = true
+max_per_turn = 2
+
+[prompts]
+# Versioned system prompts (A4): `system` names a file of configs/prompts/system (without .txt).
+# A new version is a new file; going back to an older name is the rollback. "" sends none.
+system = "v2"
 
 [storage]
 db_path = "~/.sensai/sensai.db"
@@ -22,3 +43,63 @@ db_path = "~/.sensai/sensai.db"
 read = "allow"
 write = "ask"
 exec = "ask"
+
+[files]
+max_read_bytes = 65536
+max_write_bytes = 1048576
+max_diff_lines = 200
+max_list_entries = 200
+allowed_roots = []
+
+[mcp]
+# MCP servers (T1), launched over stdio when the chat starts. A server that fails to start is
+# reported and skipped. `risk`: "read", "write", "exec" (the policy above applies) or "auto"
+# (the server's readOnlyHint decides between "read" and "exec").
+timeout_s = 30  # maximum time for one MCP request
+
+# Our own server: Python code navigation inside one root.
+# [[mcp.servers]]
+# name = "code"
+# command = "sensai-mcp"
+# args = ["--root", "demo-repo"]
+# risk = "read"
+
+# An existing server: the official filesystem server, limited to the demo repository
+# (requires Node.js; tested in tests/integration/test_mcp_existing_server.py).
+# [[mcp.servers]]
+# name = "fs"
+# command = "npx"
+# args = ["-y", "@modelcontextprotocol/server-filesystem@2026.8.31", "demo-repo"]
+# risk = "auto"
+
+[sandbox]
+enabled = true
+image = "sensai-sandbox:latest"
+cpus = 1.0
+memory_mb = 512
+pids_limit = 128
+timeout_s = 60
+max_output_bytes = 16384
+
+[rag]
+# Codebase retrieval (R1). `sensai index` splits the files of the allowed roots into chunks of
+# lines, embeds them with Ollama (`ollama pull nomic-embed-text`) and stores them in the
+# database; the chat then gets a `search_code` tool. Re-run `sensai index` after changes.
+enabled = true
+embed_model = "nomic-embed-text"
+chunk_lines = 40
+overlap = 10
+top_k = 5
+
+[guards]
+enabled = true
+# Values of this file are redacted from tool outputs and answers (KEY=VALUE lines).
+env_file = ".env"
+
+[web]
+enabled = true
+# Local SearXNG instance started with `make searxng` (no API key, no quota).
+base_url = "http://localhost:8080"
+max_results = 5
+timeout_s = 10
+max_result_chars = 6000

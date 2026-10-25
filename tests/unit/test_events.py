@@ -59,13 +59,20 @@ def test_initial_vocabulary_is_complete():
         "tool.failed",
         "approval.requested",
         "approval.resolved",
-    }
-    assert RESERVED_EVENT_TYPES == {
+        "structured.repaired",
+        "structured.failed",
+        "react.plan",
+        "react.action",
+        "react.observation",
+        "guard.blocked",
+        "guard.redacted",
         "question.requested",
         "question.answered",
+    }
+
+    assert RESERVED_EVENT_TYPES == {
         "memory.compressed",
         "artifact.patched",
-        "guard.blocked",
     }
     assert ALL_EVENT_TYPES == EVENT_TYPES | RESERVED_EVENT_TYPES
 

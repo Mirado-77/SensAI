@@ -39,6 +39,15 @@ _INSERT_MESSAGE = (
     " tool_calls_json, tool_name, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
 )
 
+_LIST_SESSIONS = """
+SELECT s.id, s.created_at,
+       (SELECT content FROM messages m WHERE m.session_id = s.id AND m.role = 'user'
+        ORDER BY m.created_at LIMIT 1) AS first_message
+FROM sessions s
+WHERE s.head_message_id IS NOT NULL AND s.id LIKE ?
+ORDER BY s.created_at DESC LIMIT ?
+"""
+
 _SET_HEAD = "UPDATE sessions SET head_message_id = ? WHERE id = ?"
 
 
@@ -53,6 +62,11 @@ class SqliteSessionStore:
                 "INSERT OR REPLACE INTO profiles (id, data_json) VALUES (?, ?)",
                 (profile_id, json.dumps(data)),
             )
+
+    def list_sessions(self, limit: int, prefix: str = "") -> list[sqlite3.Row]:
+        """Not part of the contract: non-empty sessions whose id starts with `prefix`, newest
+        first, with their first user message (`id`, `created_at`, `first_message`)."""
+        return self._db.execute(_LIST_SESSIONS, (prefix + "%", limit)).fetchall()
 
     def create_session(self, profile_id: str | None = None) -> str:
         session_id = new_id()

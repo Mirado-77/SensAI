@@ -11,6 +11,10 @@ from sensai.core.events import (
     APPROVAL_RESOLVED,
     MODEL_CHUNK,
     MODEL_USAGE,
+    QUESTION_ANSWERED,
+    QUESTION_REQUESTED,
+    REACT_ACTION,
+    REACT_PLAN,
     RUN_CANCELLED,
     RUN_COMPLETED,
     RUN_FAILED,
@@ -46,6 +50,10 @@ class ConsoleRenderer:
             RUN_STARTED: self._run_started,
             MODEL_CHUNK: self._chunk,
             MODEL_USAGE: self._usage,
+            REACT_PLAN: self._react_plan,
+            REACT_ACTION: self._react_action,
+            QUESTION_REQUESTED: self._approval_requested,
+            QUESTION_ANSWERED: self._approval_resolved,
             APPROVAL_REQUESTED: self._approval_requested,
             APPROVAL_RESOLVED: self._approval_resolved,
             TOOL_STARTED: self._tool_started,
@@ -76,6 +84,19 @@ class ConsoleRenderer:
     def _usage(self, payload: dict[str, Any]) -> None:
         self._tokens[0] += payload["prompt_tokens"]
         self._tokens[1] += payload["completion_tokens"]
+
+    def _react_plan(self, payload: dict[str, Any]) -> None:
+        if not payload["steps"]:
+            return
+        self._pause()
+        self._console.print(Text(f"plan> {payload['goal']}", style="cyan"))
+        for index, step in enumerate(payload["steps"], 1):
+            self._dim(f"  {index}. {step}")
+        self._start_status()
+
+    def _react_action(self, payload: dict[str, Any]) -> None:
+        self._pause()
+        self._console.print(Text(f"step {payload['step']}> {', '.join(payload['tools'])}", "cyan"))
 
     def _approval_requested(self, payload: dict[str, Any]) -> None:
         self._pause()
