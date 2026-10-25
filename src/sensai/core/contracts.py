@@ -44,6 +44,11 @@ class Tool(Protocol):
     `parameters` is a JSON Schema of type "object". An expected failure (missing file, failing
     command) is returned as `ToolResult(is_error=True)`. An exception escaping `run` is treated
     by the runtime as a tool failure (`tool.failed`).
+
+    A tool may also define `async def preview(self, args) -> str | None`. It is not part of the
+    protocol. The runtime calls it only when approval is needed and shows the text it returns
+    (the diff for a write, the command for an exec). `None`, an empty text or an exception gives
+    the generic `name(args)` preview. It must not change anything.
     """
 
     name: str

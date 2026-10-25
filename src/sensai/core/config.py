@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from sensai.core.errors import ConfigError
 from sensai.core.types import Decision, Risk
@@ -75,6 +75,7 @@ class AllowedRoot(_Section):
 class FilesConfig(_Section):
     max_read_bytes: int = Field(gt=0)
     max_write_bytes: int = Field(gt=0)
+    max_diff_lines: int = Field(gt=0)
     max_list_entries: int = Field(gt=0)
     allowed_roots: list[AllowedRoot] = Field(default_factory=list)
 
@@ -96,6 +97,37 @@ class McpConfig(_Section):
     servers: list[McpServerConfig] = []
 
 
+class SandboxConfig(_Section):
+    enabled: bool
+    image: str = Field(min_length=1)
+    cpus: float = Field(gt=0)
+    memory_mb: int = Field(gt=0)
+    pids_limit: int = Field(gt=0)
+    timeout_s: int = Field(gt=0)
+    max_output_bytes: int = Field(gt=0)
+
+
+class RagConfig(_Section):
+    """Codebase retrieval (R1): `sensai index` embeds chunks of lines, `search_code` finds them."""
+
+    enabled: bool
+    embed_model: str = Field(min_length=1)
+    chunk_lines: int = Field(gt=0)
+    overlap: int = Field(ge=0)
+    top_k: int = Field(gt=0, le=20)
+
+    @model_validator(mode="after")
+    def _overlap_below_chunk(self) -> "RagConfig":
+        if self.overlap >= self.chunk_lines:
+            raise ValueError("overlap must be smaller than chunk_lines")
+        return self
+class GuardsConfig(_Section):
+    """Input and output guards (EV2): injection check, secret redaction from `env_file`."""
+
+    enabled: bool
+    env_file: Path
+
+
 class Config(_Section):
     model: ModelConfig
     runtime: RuntimeConfig
@@ -107,6 +139,9 @@ class Config(_Section):
     policy: PolicyConfig
     files: FilesConfig
     mcp: McpConfig
+    sandbox: SandboxConfig
+    rag: RagConfig
+    guards: GuardsConfig
 
 
 def _read_toml(path: Path) -> dict[str, Any]:

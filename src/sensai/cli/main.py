@@ -15,6 +15,7 @@ from rich.text import Text
 
 from sensai.cli.ask import run_ask
 from sensai.cli.chat import LAST_SESSION, print_sessions, run_chat
+from sensai.cli.index import run_index
 from sensai.cli.prompts import print_prompt_diff, print_prompt_stats, print_prompt_versions
 from sensai.cli.terminal import Terminal
 from sensai.core.config import Config, load_config
@@ -57,6 +58,9 @@ def build_parser() -> argparse.ArgumentParser:
     diff.add_argument("old")
     diff.add_argument("new")
     actions.add_parser("stats", help="compare the versions on the recorded runs")
+    index = commands.add_parser("index", help="embed the codebase for search_code (R1)")
+    _add_common_options(index)
+    index.add_argument("paths", nargs="*", help="folders to index (default: the allowed roots)")
     return parser
 
 
@@ -82,6 +86,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
     if args.command == "ask":
         return _run(run_ask(config, terminal, args.schema, _question(args.question)), terminal)
+    if args.command == "index":
+        return _run(run_index(config, terminal, args.paths), terminal)
     if args.command == "sessions":
         return print_sessions(config, terminal)
     if args.command == "prompts":

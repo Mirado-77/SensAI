@@ -16,7 +16,8 @@ Event payloads (all events also carry `run_id`):
 - model.chunk: text
 - model.tool_call: call_id, name, args
 - model.usage: prompt_tokens, completion_tokens
-- approval.requested: call_id, tool, risk, preview
+- approval.requested: call_id, tool, risk, preview (the diff of the change when the tool provides
+  one, else the call as JSON)
 - approval.resolved: call_id, tool, approved
 - tool.started: call_id, tool, risk, args
 - tool.finished: call_id, tool, is_error, duration_ms, content
@@ -24,6 +25,8 @@ Event payloads (all events also carry `run_id`):
   "too many questions" or the exception)
 - react.plan, react.action, react.observation: see `sensai.core.react`
 - question.requested, question.answered: see `sensai.core.questions`
+- guard.blocked: stage ("entry" or "tool"), reason, and tool for a tool output
+- guard.redacted: stage ("answer" or "tool"), count, and tool for a tool output
 - run.completed: session_id, steps, tool_calls
 - run.cancelled: session_id, partial
 - run.failed: session_id, error_type, error
@@ -37,10 +40,11 @@ from typing import Any, Literal
 
 from sensai.core.config import QuestionsConfig, ReactConfig, RuntimeConfig
 from sensai.core.contracts import EventSink, ModelGateway, SessionStore, Tool, UserChannel
-from sensai.core.errors import RunLimitError, SensaiError, StructuredOutputError
+from sensai.core.errors import GuardBlockedError, RunLimitError, SensaiError, StructuredOutputError
 from sensai.core.events import (
     APPROVAL_REQUESTED,
     APPROVAL_RESOLVED,
+    GUARD_BLOCKED,
     MODEL_CHUNK,
     MODEL_TOOL_CALL,
     MODEL_USAGE,
@@ -102,9 +106,11 @@ class RunContext:
     user_text: str
     messages: list[Message] = field(default_factory=list)
     answer: str = ""
+    notices: list[tuple[str, dict[str, Any]]] = field(default_factory=list)
 
 
 Hook = Callable[[RunContext], Awaitable[None]]
+ResultHook = Callable[[RunContext, str, ToolResult], Awaitable[ToolResult]]
 
 
 @dataclass(frozen=True)
@@ -150,6 +156,7 @@ class AgentRuntime:
         self.prompt_version: str | None = None
         self.entry_hooks: list[Hook] = []
         self.exit_hooks: list[Hook] = []
+        self.result_hooks: list[ResultHook] = []
 
     async def run_turn(self, session_id: str, user_text: str) -> RunResult:
         """Run one turn. Expected failures are returned; cancellation is re-raised.
@@ -189,13 +196,13 @@ class AgentRuntime:
 
     async def _execute(self, run_id: str, session_id: str, user_text: str, state: _RunState) -> str:
         ctx = RunContext(run_id, session_id, user_text)
-        await _run_hooks(self.entry_hooks, ctx)
+        await self._run_hooks(self.entry_hooks, ctx)
         self._build_context(ctx, state)
         if self._react is not None:
             await self._plan(ctx, state)
         assistant = await self._model_loop(ctx, state)
         ctx.answer = assistant.content
-        await _run_hooks(self.exit_hooks, ctx)
+        await self._run_hooks(self.exit_hooks, ctx)
         state.new_messages.append(replace(assistant, content=ctx.answer))
         return ctx.answer
 
@@ -362,7 +369,7 @@ class AgentRuntime:
         return None
 
     async def _ask_user(self, ctx: RunContext, call_id: str, tool: Tool, call: ToolCall) -> bool:
-        preview = preview_call(tool.name, call.args)
+        preview = await self._preview(tool, call.args)
         request = ApprovalRequest(ctx.run_id, tool.name, tool.risk, preview, call.args)
         self._emit_tool(
             APPROVAL_REQUESTED, ctx, call_id, tool.name, risk=tool.risk, preview=preview
@@ -370,6 +377,18 @@ class AgentRuntime:
         approved = await self._deps.channel.confirm(request)
         self._emit_tool(APPROVAL_RESOLVED, ctx, call_id, tool.name, approved=approved)
         return approved
+
+    async def _preview(self, tool: Tool, args: dict[str, Any]) -> str:
+        build = getattr(tool, "preview", None)
+
+        if build is not None:
+            try:
+                text = await build(args)
+            except Exception:
+                text = None
+            if text:
+                return text
+        return preview_call(tool.name, args)
 
     async def _execute_tool(
         self, ctx: RunContext, call_id: str, tool: Tool, call: ToolCall
@@ -382,6 +401,11 @@ class AgentRuntime:
             error = f"{type(exc).__name__}: {exc}"
             self._emit_tool(TOOL_FAILED, ctx, call_id, tool.name, error=error)
             return _error(f"Tool error: {error}")
+        try:
+            result = await self._guard_result(ctx, tool.name, result)
+        except GuardBlockedError as exc:
+            self._emit_tool(TOOL_FAILED, ctx, call_id, tool.name, error="blocked")
+            return _error(f"The output of {tool.name} was blocked: {exc.reason}.")
         duration_ms = (time.perf_counter() - started) * 1000
         details = {"is_error": result.is_error, "duration_ms": duration_ms}
         self._emit_tool(TOOL_FINISHED, ctx, call_id, tool.name, content=result.content, **details)
@@ -425,10 +449,35 @@ class AgentRuntime:
     def _emit(self, type_: str, run_id: str, **payload: Any) -> None:
         self._deps.sink.emit(make_event(type_, run_id, payload))
 
+    async def _run_hooks(self, hooks: list[Hook], ctx: RunContext) -> None:
+        for hook in hooks:
+            try:
+                await hook(ctx)
+            except GuardBlockedError as exc:
+                self._emit(GUARD_BLOCKED, ctx.run_id, stage=exc.stage, reason=exc.reason)
+                raise
+            finally:
+                self._flush_notices(ctx)
 
-async def _run_hooks(hooks: list[Hook], ctx: RunContext) -> None:
-    for hook in hooks:
-        await hook(ctx)
+    async def _guard_result(
+        self, ctx: RunContext, tool_name: str, result: ToolResult
+    ) -> ToolResult:
+        for hook in self.result_hooks:
+            try:
+                result = await hook(ctx, tool_name, result)
+            except GuardBlockedError as exc:
+                self._emit(
+                    GUARD_BLOCKED, ctx.run_id, stage=exc.stage, reason=exc.reason, tool=tool_name
+                )
+                raise
+            finally:
+                self._flush_notices(ctx)
+        return result
+
+    def _flush_notices(self, ctx: RunContext) -> None:
+        for type_, payload in ctx.notices:
+            self._emit(type_, ctx.run_id, **payload)
+        ctx.notices.clear()
 
 
 def _limit_error(maximum: int, unit: str) -> RunLimitError:

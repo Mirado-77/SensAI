@@ -206,7 +206,14 @@ def chat_setup(tmp_path, *lines, **overrides):
     react = {"enabled": False, "max_plan_steps": 5}
     questions = {"enabled": False, "max_per_turn": 2}
     prompts = {"system": ""}
-    defaults = {"storage": storage, "react": react, "questions": questions, "prompts": prompts}
+    sandbox = {"enabled": False}
+    defaults = {
+        "storage": storage,
+        "react": react,
+        "questions": questions,
+        "prompts": prompts,
+        "sandbox": sandbox,
+    }
     config = load_config(overrides={**defaults, **overrides})
     terminal, out, err = make_terminal(scripted(*lines))
     return config, terminal, out, err
