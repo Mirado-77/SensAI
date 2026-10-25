@@ -43,6 +43,8 @@ sensai> Phil
 | an empty line | ignored, the model is not called |
 | `Ctrl-C` during an answer | stops the generation and returns to the prompt; the text received so far is kept in the history |
 | `/tools` | list the tools the model can call, with their risk level |
+| `/history` | list the messages of the current branch, numbered; an interrupted answer is marked |
+| `/fork <n>` | continue in a new session from message `n` of `/history`; the original session is kept |
 | `/profile` | show your profile; `/profile instructions <text>`, `/profile set <key> <value>`, `/profile unset <key>`, `/profile clear` edit it |
 | `/exit`, `/quit`, `Ctrl-D` or `Ctrl-C` at the prompt | quit |
 
@@ -119,6 +121,22 @@ or configuration.
 The same validation protects tools: arguments that do not match a tool's JSON Schema are never
 executed nor submitted for approval; the model gets the errors back and can correct its call.
 
+### System prompt versions
+
+The system prompt sent before the profile is a versioned file of `configs/prompts/system/`
+(`v1.txt`, `v2.txt`, ...). A new version is a new file; `[prompts] system` picks the active one.
+
+```bash
+sensai prompts                  # list the versions, * marks the active one
+sensai prompts diff v1 v2       # what changed between two versions
+sensai prompts stats            # runs, failures, tokens, duration and tool errors per version
+sensai chat --prompt v1         # roll back for this chat
+```
+
+In the chat, `/prompt` shows the active version and `/prompt v1` switches to it for the next
+turns, without losing the history. Each run records `<version>@<sha>`, so an edited file shows
+up as a new line in `stats`.
+
 ### Tools from MCP servers
 
 The model can call tools served over MCP (stdio). Declare servers in a `--config` file:
@@ -183,6 +201,7 @@ name = "llama3.2:3b"
 | `[model]` | `name`, `host`, `timeout_s` | Ollama model, server address, maximum time without a response |
 | `[runtime]` | `max_steps`, `max_tool_calls`, `timeout_s`, `max_tokens` | Limits of one turn |
 | `[structured]` | `max_repairs` | Repair attempts when a structured answer does not match its schema (0 to 3) |
+| `[prompts]` | `system` | Active system prompt version, a file of `configs/prompts/system/` without `.txt` (`""` for none); also `sensai chat --prompt v1` |
 | `[questions]` | `enabled`, `max_per_turn` | Structured questions: the model may call `ask_user` to ask one short question with options (1 to 5 per turn) |
 | `[react]` | `enabled`, `max_plan_steps` | Bounded ReAct loop: a short structured plan before acting (1 to 10 steps); `enabled = false` turns it off |
 | `[mcp]` | `timeout_s`, `[[mcp.servers]]` | Maximum time of one MCP request; MCP servers: `name`, `command`, `args`, `env`, `cwd`, `enabled`, `risk` (`read`, `write`, `exec` or `auto`) |
@@ -254,6 +273,8 @@ file, one migration per pull request. Migrations are applied when the database i
 | B1 | Streaming CLI chat with in-session history, clean error handling, selectable model | done ([user stories](docs/user-stories/B1.md)) |
 | T1 | MCP: hand-written stdio client, our own server `sensai-mcp`, existing servers by configuration, same permissions as native tools | done ([user stories](docs/user-stories/T1.md)) |
 | M1 | Session persistence and user profile: `sensai sessions`, `sensai chat --resume`, `/profile` sent at every turn | done ([user stories](docs/user-stories/M1.md)) |
+| A4 | Versioned system prompts: one file per version, active version in config or `/prompt` in the chat, version recorded on every run, `sensai prompts list`, `diff` and `stats` to compare and roll back | done ([user stories](docs/user-stories/A4.md)) |
+| X2 | Interruption and fork: `Ctrl-C` stops the answer and keeps the partial text as interrupted, `/history` and `/fork <n>` branch the conversation into a new session | done ([user stories](docs/user-stories/X2.md)) |
 | X4 | Structured questions: when the request is ambiguous the model asks one short question with numbered options, the answer goes back to it and is saved | done ([user stories](docs/user-stories/X4.md)) |
 | X5 | Scheduled tasks: the chat plans a command from the allowed list at a fixed interval (approved once, at creation), `sensai schedule` runs them in the sandbox, `[scheduler]` config | done ([user stories](docs/user-stories/X5.md)) |
 | A1 | Bounded ReAct loop: short structured plan shown before acting, one event per action and observation, bounded by `max_steps` | done ([user stories](docs/user-stories/A1.md)) |

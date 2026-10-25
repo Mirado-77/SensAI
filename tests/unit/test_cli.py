@@ -201,10 +201,11 @@ async def test_confirm_refuses_at_end_of_input_and_shows_the_preview():
 
 def chat_setup(tmp_path, *lines, **overrides):
     storage = {"db_path": str(tmp_path / "sensai.db")}
-    # A1 planning and X4 questions are off here so that each script is one model call and the
-    # offered tools are the configured ones; test_react and test_questions turn them on.
+    # A1 planning, X4 questions and the A4 base prompt are off here so that each script is one
+    # model call with only the user's messages; their own test files turn them on.
     react = {"enabled": False, "max_plan_steps": 5}
     questions = {"enabled": False, "max_per_turn": 2}
+    prompts = {"system": ""}
     sandbox = {"enabled": False}
     # T3 is off so that no test depends on a SearXNG instance; test_web_search covers it.
     web = {"enabled": False}
@@ -214,6 +215,7 @@ def chat_setup(tmp_path, *lines, **overrides):
         "storage": storage,
         "react": react,
         "questions": questions,
+        "prompts": prompts,
         "sandbox": sandbox,
         "web": web,
         "scheduler": scheduler,
