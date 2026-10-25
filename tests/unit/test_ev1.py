@@ -102,6 +102,8 @@ async def test_agent_answers_with_the_prompt_version_and_reads_the_copy(source):
     assert answers[0].status == "completed"
     assert answers[0].answer == "Une liste vide."
     assert answers[0].calls == ["read_file"]
+    offered = {spec.name for spec in agent.calls[0].tools}
+    assert "read_file" in offered and not offered & {"write_file", "edit_file"}
     assert version.startswith("v2@")
     assert agent.calls[0].messages[0].role == "system"
     assert "SENSAI" in agent.calls[0].messages[0].content

@@ -61,7 +61,8 @@ async def answer_questions(
         try:
             notes: list[str] = []
             run_config = _read_only_copy_config(config, root)
-            tools = list(native_tools(run_config))
+            # Questions only need reading: a write tool would just burn steps on refused edits.
+            tools = [tool for tool in native_tools(run_config) if tool.risk == "read"]
             if index:
                 progress("Indexation de la copie du dépôt (search_code)")
                 tools += await _search_tools(run_config, root, connection, notes)
