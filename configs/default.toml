@@ -30,6 +30,11 @@ max_plan_steps = 5
 enabled = true
 max_per_turn = 2
 
+[prompts]
+# Versioned system prompts (A4): `system` names a file of configs/prompts/system (without .txt).
+# A new version is a new file; going back to an older name is the rollback. "" sends none.
+system = "v2"
+
 [storage]
 db_path = "~/.sensai/sensai.db"
 

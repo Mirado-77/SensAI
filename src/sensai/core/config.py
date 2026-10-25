@@ -51,6 +51,12 @@ class QuestionsConfig(_Section):
     max_per_turn: int = Field(gt=0, le=5)
 
 
+class PromptsConfig(_Section):
+    """Versioned system prompts (A4). `system` names a file of configs/prompts/system; "" = none."""
+
+    system: str = Field(pattern=r"^([A-Za-z0-9_-]+)?$")
+
+
 class StorageConfig(_Section):
     db_path: Path
 
@@ -115,6 +121,8 @@ class RagConfig(_Section):
         if self.overlap >= self.chunk_lines:
             raise ValueError("overlap must be smaller than chunk_lines")
         return self
+
+
 class GuardsConfig(_Section):
     """Input and output guards (EV2): injection check, secret redaction from `env_file`."""
 
@@ -128,6 +136,7 @@ class Config(_Section):
     structured: StructuredConfig
     react: ReactConfig
     questions: QuestionsConfig
+    prompts: PromptsConfig
     storage: StorageConfig
     policy: PolicyConfig
     files: FilesConfig
