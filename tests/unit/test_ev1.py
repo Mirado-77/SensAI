@@ -1,3 +1,4 @@
+import asyncio
 import json
 from datetime import datetime
 from pathlib import Path
@@ -78,6 +79,17 @@ async def test_judge_that_never_returns_a_valid_grade_leaves_the_answer_ungraded
     judge = FakeModelGateway([Chunk("pas du JSON")], [grade_json(score=9)])
 
     assert await grade_answer(judge, CASE, "[]", max_repairs=1) is None
+
+
+class EndlessJudge:
+    async def stream_chat(self, messages, tools=None, schema=None):
+        while True:
+            await asyncio.sleep(0.01)
+            yield Chunk(" ")
+
+
+async def test_judge_that_never_stops_is_cut_and_leaves_the_answer_ungraded():
+    assert await grade_answer(EndlessJudge(), CASE, "[]", timeout_s=0.05) is None
 
 
 async def test_agent_answers_with_the_prompt_version_and_reads_the_copy(source):

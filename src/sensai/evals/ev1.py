@@ -79,7 +79,13 @@ async def run(
     results = []
     for number, answer in enumerate(answers, 1):
         progress(f"[{number}/{len(answers)}] {answer.case.id} : note du juge")
-        grade = await grade_answer(judge, answer.case, answer.answer, config.structured.max_repairs)
+        grade = await grade_answer(
+            judge,
+            answer.case,
+            answer.answer,
+            config.structured.max_repairs,
+            config.runtime.timeout_s,
+        )
         results.append(GradedAnswer(answer, grade))
     return results, RunInfo(model.name, judge_model, version, when, notes)
 

@@ -4,6 +4,7 @@ The judge is a separate model call with structured output (T5): it only sees the
 reference, the criteria and the answer, never the tools nor the conversation.
 """
 
+import asyncio
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -37,16 +38,23 @@ NO_ANSWER = Grade(verdict="incorrect", score=1, reason="aucune réponse de l'age
 
 
 async def grade_answer(
-    gateway: ModelGateway, case: QuestionCase, answer: str, max_repairs: int = 1
+    gateway: ModelGateway,
+    case: QuestionCase,
+    answer: str,
+    max_repairs: int = 1,
+    timeout_s: float | None = None,
 ) -> Grade | None:
-    """The judge's grade, or None when it could not produce a valid one. An empty answer is
-    graded without calling the judge."""
+    """The judge's grade, or None when it could not produce a valid one within `timeout_s`. An
+    empty answer is graded without calling the judge."""
     if not answer.strip():
         return NO_ANSWER
     messages = [Message("system", JUDGE_INSTRUCTION), Message("user", _submission(case, answer))]
     try:
-        result = await generate_structured(gateway, messages, Grade, max_repairs=max_repairs)
-    except StructuredOutputError:
+        # The gateway timeout only covers silence: a model that never stops streaming needs this.
+        result = await asyncio.wait_for(
+            generate_structured(gateway, messages, Grade, max_repairs=max_repairs), timeout_s
+        )
+    except (StructuredOutputError, asyncio.TimeoutError):
         return None
     return result.value
 
