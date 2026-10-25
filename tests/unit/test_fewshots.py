@@ -1,12 +1,20 @@
+import json
+
 import pytest
 from tests.unit.test_cli import chat_setup
 from tests.unit.test_runtime import build, events_of, saved
 
 from sensai.cli.chat import run_chat
+from sensai.core.config import load_config
 from sensai.core.errors import ConfigError
 from sensai.core.fakes import FakeModelGateway
 from sensai.core.fewshots import Example, FewShots, fewshots_from, load_examples
 from sensai.core.types import Chunk, Message
+from sensai.evals import ev1
+from sensai.evals.compare import compare
+from sensai.evals.compare import main as compare_main
+from sensai.evals.quality_report import to_markdown
+from sensai.evals.questions import QuestionCase
 
 pytestmark = pytest.mark.feature("A7")
 
@@ -84,3 +92,57 @@ async def test_the_chat_sends_the_configured_examples(tmp_path):
     assert [m.role for m in sent] == ["user", "assistant", "user"]
     assert "find_user" in sent[0].content
     assert "+ 1 examples" in out.getvalue()
+
+
+def report(variant, mean, scores):
+    questions = [{"id": question, "score": score} for question, score in scores.items()]
+    return {
+        "model": "m",
+        "variant": variant,
+        "summary": {"mean_score": mean},
+        "questions": questions,
+    }
+
+
+def test_compare_shows_the_mean_and_each_question_side_by_side():
+    before = report("v2@a + 0 exemples", 2.5, {"q1": 1, "q2": 4})
+    after = report("v2@a + 2 exemples", 4.0, {"q1": 4, "q3": 5})
+
+    table = compare(before, after)
+
+    assert "| Variante | v2@a + 0 exemples | v2@a + 2 exemples | |" in table
+    assert "| Score moyen | 2.5 | 4 | +1.5 |" in table
+    assert "| q1 | 1 | 4 | +3 |" in table
+    assert "| q2 | 4 | - | - |" in table and "| q3 | - | 5 | - |" in table
+
+
+def test_a_report_written_before_a7_is_read_as_zero_examples():
+    old = {"prompt_version": "v1@b", "summary": {"mean_score": None}, "questions": []}
+    assert "v1@b + 0 exemples" in compare(old, old)
+
+
+def test_compare_command_prints_the_table_or_exits_2(tmp_path, capsys):
+    good, bad = tmp_path / "a.json", tmp_path / "b.json"
+    good.write_text(json.dumps(report("v", 3, {"q": 3})), encoding="utf-8")
+    bad.write_text('{"model": "m"}', encoding="utf-8")
+
+    assert compare_main([str(good), str(good)]) == 0
+    assert "| q | 3 | 3 | +0 |" in capsys.readouterr().out
+    assert compare_main([str(good), str(bad)]) == 2
+    assert "pas un rapport EV1" in capsys.readouterr().err
+    assert compare_main([str(good), str(tmp_path / "absent.json")]) == 2
+
+
+async def test_ev1_records_the_variant_and_the_examples_sent():
+    config = load_config(
+        overrides={"react": {"enabled": False}, "prompts": {"system": "v2", "examples": 1}}
+    )
+    case = QuestionCase(id="q", question="Que renvoie la fonction find_user ?", reference="None")
+    grade = Chunk(json.dumps({"verdict": "correct", "score": 5, "reason": "Juste."}))
+    agent, judge = FakeModelGateway([Chunk("None.")]), FakeModelGateway([grade])
+
+    results, info = await ev1.run([case], config, "j", agent, judge, index=False)
+
+    assert results[0].answer.examples == ["valeur-renvoyee"]
+    assert info.examples == 1 and info.variant.endswith("+ 1 exemples")
+    assert "- Few-shots : 1 exemples au plus par question" in to_markdown(results, info)
