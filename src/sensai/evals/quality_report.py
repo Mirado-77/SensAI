@@ -103,6 +103,7 @@ def _question_json(result: GradedAnswer) -> dict:
     return {
         "id": answer.case.id,
         "status": answer.status,
+        "error": answer.error,
         "verdict": grade.verdict if grade else None,
         "score": grade.score if grade else None,
         "reason": grade.reason if grade else "le juge n'a pas produit de note valide",
@@ -135,6 +136,7 @@ def _question_details(result: GradedAnswer) -> list[str]:
         "",
         f"- Question : {answer.case.question}",
         f"- Statut du tour : {answer.status}",
+        *([f"- Erreur du tour : {answer.error}"] if answer.error else []),
         f"- Raison du juge : {reason}",
         "",
         f"> {excerpt}",

@@ -143,6 +143,8 @@ def test_markdown_report_lists_version_scores_and_ungraded_answers():
     assert "| non notée | 1 |" in markdown
     assert "| ev1-test | partielle | 3 | read_file |" in markdown
     assert "- Note : note" in markdown
+    failed = Answer(CASE, "failed", error="Délai dépassé")
+    assert "- Erreur du tour : Délai dépassé" in to_markdown([GradedAnswer(failed, None)], info)
 
 
 def test_main_exits_2_on_unknown_prompt_version(tmp_path, capsys):

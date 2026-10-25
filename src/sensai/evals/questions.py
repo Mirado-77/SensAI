@@ -39,6 +39,7 @@ class Answer:
     status: str
     answer: str = ""
     calls: list[str] = field(default_factory=list)
+    error: str | None = None
 
 
 async def answer_questions(
@@ -113,4 +114,6 @@ async def _answer(
     runtime.system_prompt = version.text if version else None
     runtime.prompt_version = version.label if version else None
     result = await runtime.run_turn(store.create_session(), case.question)
-    return Answer(case, result.status, result.answer, requested_calls(recorder.events))
+    return Answer(
+        case, result.status, result.answer, requested_calls(recorder.events), result.error
+    )
