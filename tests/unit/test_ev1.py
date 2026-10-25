@@ -110,12 +110,22 @@ async def test_run_grades_every_answer():
     judge = FakeModelGateway([grade_json()], [grade_json("incorrect", 1, "Hors sujet.")])
     other = CASE.model_copy(update={"id": "ev1-autre"})
 
-    results, info = await ev1.run([CASE, other], CONFIG, "juge", agent, judge, index=False)
+    messages = []
+
+    results, info = await ev1.run(
+        [CASE, other], CONFIG, "juge", agent, judge, index=False, progress=messages.append
+    )
 
     summary = summarize(results)
     assert summary["verdicts"] == {"correct": 1, "partial": 0, "incorrect": 1}
     assert summary["mean_score"] == 3
     assert info.judge_model == "juge" and info.prompt_version.startswith("v2@")
+    assert messages == [
+        "[1/2] ev1-test : réponse de l'agent",
+        "[2/2] ev1-autre : réponse de l'agent",
+        "[1/2] ev1-test : note du juge",
+        "[2/2] ev1-autre : note du juge",
+    ]
 
 
 def test_markdown_report_lists_version_scores_and_ungraded_answers():

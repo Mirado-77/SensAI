@@ -1,10 +1,11 @@
 """`python -m sensai.evals.ev1`: answer the question corpus with the configured model and prompt
 version, grade each answer with the LLM judge, then write the report. Exit codes: 0 report
-written, 2 unusable questions or configuration."""
+written, 2 unusable questions or configuration, 130 interrupted with Ctrl-C."""
 
 import argparse
 import asyncio
 import sys
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 
@@ -38,10 +39,15 @@ def main(argv: list[str] | None = None) -> int:
         file=sys.stderr,
     )
     try:
-        results, info = asyncio.run(run(cases, config, judge_model, index=not args.no_index))
+        results, info = asyncio.run(
+            run(cases, config, judge_model, index=not args.no_index, progress=_progress)
+        )
     except SensaiError as exc:
         print(f"Erreur : {exc}", file=sys.stderr)
         return 2
+    except KeyboardInterrupt:
+        print("Interrompu : aucun rapport écrit.", file=sys.stderr)
+        return 130
     markdown, payload = write_reports(results, info, args.out)
     summary = summarize(results)
     counts = summary["verdicts"]
@@ -61,20 +67,25 @@ async def run(
     gateway: ModelGateway | None = None,
     judge: ModelGateway | None = None,
     index: bool = True,
+    progress: Callable[[str], None] = lambda _: None,
 ) -> tuple[list[GradedAnswer], RunInfo]:
     """Answer every question, then grade the answers one after the other."""
     when = datetime.now()
-    answers, version, notes = await answer_questions(cases, config, gateway, index=index)
+    answers, version, notes = await answer_questions(
+        cases, config, gateway, index=index, progress=progress
+    )
     model = config.model
     judge = judge or OllamaGateway(model.host, judge_model, model.timeout_s)
-    results = [
-        GradedAnswer(
-            answer,
-            await grade_answer(judge, answer.case, answer.answer, config.structured.max_repairs),
-        )
-        for answer in answers
-    ]
+    results = []
+    for number, answer in enumerate(answers, 1):
+        progress(f"[{number}/{len(answers)}] {answer.case.id} : note du juge")
+        grade = await grade_answer(judge, answer.case, answer.answer, config.structured.max_repairs)
+        results.append(GradedAnswer(answer, grade))
     return results, RunInfo(model.name, judge_model, version, when, notes)
+
+
+def _progress(message: str) -> None:
+    print(message, file=sys.stderr, flush=True)
 
 
 def _parser() -> argparse.ArgumentParser:

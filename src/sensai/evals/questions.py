@@ -4,6 +4,7 @@ real runtime (active prompt version, search_code when the copy can be indexed), 
 import shutil
 import sqlite3
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -46,6 +47,7 @@ async def answer_questions(
     gateway: ModelGateway | None = None,
     source: Path = DEMO_REPO,
     index: bool = True,
+    progress: Callable[[str], None] = lambda _: None,
 ) -> tuple[list[Answer], str | None, list[str]]:
     """Answer each question in a fresh session, on one read-only copy of `source`. Returns the
     answers, the prompt version label and notes on the setup (index skipped, for instance)."""
@@ -60,11 +62,13 @@ async def answer_questions(
             run_config = _read_only_copy_config(config, root)
             tools = list(native_tools(run_config))
             if index:
+                progress("Indexation de la copie du dépôt (search_code)")
                 tools += await _search_tools(run_config, root, connection, notes)
             store = SqliteSessionStore(connection)
-            answers = [
-                await _answer(case, run_config, model, tools, store, version) for case in cases
-            ]
+            answers = []
+            for number, case in enumerate(cases, 1):
+                progress(f"[{number}/{len(cases)}] {case.id} : réponse de l'agent")
+                answers.append(await _answer(case, run_config, model, tools, store, version))
         finally:
             connection.close()
     return answers, version.label if version else None, notes
