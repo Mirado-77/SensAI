@@ -31,7 +31,7 @@ Critères d'acceptation :
 - Le rapport indique le modèle, le modèle du juge, la version de prompt `<nom>@<sha>`, le nombre
   de réponses par verdict, les réponses non notées et le score moyen.
 - Pour chaque question, le rapport donne le verdict, le score, la raison du juge, les outils
-  appelés et un extrait de la réponse.
+  appelés, un extrait de la réponse et, si le tour a échoué, son erreur (délai, limite d'étapes).
 - `--prompt <version>` évalue une autre version de prompt, `--judge-model <nom>` change le modèle
   du juge, `--only <id>` ne lance qu'une question et `--no-index` lance sans `search_code`.
 
@@ -40,4 +40,5 @@ Critères d'acceptation :
 Les tests portent l'ID de la fonctionnalité avec `@pytest.mark.feature("EV1")`.
 
 - `tests/unit/test_ev1.py` : format du corpus, appel du juge, réponse vide, juge en échec,
-  version de prompt envoyée, notes de configuration, rapport Markdown et code de sortie 2.
+  version de prompt envoyée, notes de configuration, progression, rapport Markdown (avec l'erreur
+  d'un tour échoué) et code de sortie 2.
