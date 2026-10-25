@@ -24,13 +24,16 @@ def chat_setup(tmp_path, *lines, **overrides):
     questions = {"enabled": False, "max_per_turn": 2}
     # T3 is off so that no test depends on a SearXNG instance; test_web_search covers it.
     web = {"enabled": False}
+    # X5 is off so that the tool list stays the one of each test; test_schedule covers it.
     prompts = {"system": ""}
+    scheduler = {"enabled": False}
     defaults = {
         "storage": storage,
         "react": react,
         "questions": questions,
         "web": web,
         "prompts": prompts,
+        "scheduler": scheduler,
     }
     config = load_config(overrides={**defaults, **overrides})
     out, err = io.StringIO(), io.StringIO()
