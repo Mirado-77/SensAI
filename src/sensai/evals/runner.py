@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from sensai.core.config import AllowedRoot, Config
-from sensai.core.contracts import ModelGateway, Tool
+from sensai.core.contracts import EventSink, ModelGateway, Tool
 from sensai.core.events import Event
 from sensai.core.runtime import AgentRuntime, RunResult, RuntimeDeps
 from sensai.core.types import ApprovalRequest
@@ -150,19 +150,30 @@ async def _execute(turn: _Turn, root: Path) -> CaseResult:
 
 async def _run_turn(turn: _Turn, connection: sqlite3.Connection) -> RunResult:
     store = SqliteSessionStore(connection)
-    deps = RuntimeDeps(
-        gateway=turn.gateway,
-        store=store,
-        sink=turn.recorder,
-        channel=AutoDenyChannel(),
-        registry=ToolRegistry(turn.tools),
-        policy=ApprovalPolicy.from_config(turn.config.policy),
-    )
-    runtime = AgentRuntime(
-        deps,
-        turn.config.runtime,
-        turn.config.model.name,
-        react=turn.config.react,
-        max_repairs=turn.config.structured.max_repairs,
-    )
+    runtime = build_runtime(turn.config, turn.gateway, turn.tools, turn.recorder, store)
     return await runtime.run_turn(store.create_session(), turn.case.prompt)
+
+
+def build_runtime(
+    config: Config,
+    gateway: ModelGateway,
+    tools: list[Tool],
+    sink: EventSink,
+    store: SqliteSessionStore,
+) -> AgentRuntime:
+    """The chat runtime, with every approval refused so that no run changes the repository."""
+    deps = RuntimeDeps(
+        gateway=gateway,
+        store=store,
+        sink=sink,
+        channel=AutoDenyChannel(),
+        registry=ToolRegistry(tools),
+        policy=ApprovalPolicy.from_config(config.policy),
+    )
+    return AgentRuntime(
+        deps,
+        config.runtime,
+        config.model.name,
+        react=config.react,
+        max_repairs=config.structured.max_repairs,
+    )
