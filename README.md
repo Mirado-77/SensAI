@@ -266,6 +266,7 @@ file, one migration per pull request. Migrations are applied when the database i
 | R1 | Codebase search (RAG): `sensai index` embeds chunks of the allowed roots with Ollama, `search_code` returns the closest excerpts with `path:lines`, incremental re-indexing | done ([user stories](docs/user-stories/R1.md)) |
 | EV4 | Attack corpus in `evals/attacks/`: file injection, tool injection, paths outside the roots, secret leak, dangerous command; `make eval` writes a JSON and a Markdown report in `evals/reports/` | done ([user stories](docs/user-stories/EV4.md)) |
 | EV2 | Guards: user messages and tool outputs refused when they try to override the instructions, `.env` values and common key formats redacted from tool outputs and answers, `[guards]` config | done ([user stories](docs/user-stories/EV2.md)) |
+| T3 | Web search through a local SearXNG (`make searxng`, no API key, no quota): `web_search` with `allowed_domains` / `blocked_domains`, results marked untrusted, `[web]` config | done ([user stories](docs/user-stories/T3.md)) |
 
 Foundations already in place for the next features: the tool-call path of the agent loop
 (registry, approval by risk level, untrusted content marking), the event journal, and the

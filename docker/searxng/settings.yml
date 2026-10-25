@@ -1,0 +1,11 @@
+# Local SearXNG for SENSAI (T3). Only the JSON format is added to the defaults.
+use_default_settings: true
+
+server:
+  secret_key: "sensai-local-only-change-me"
+  limiter: false
+
+search:
+  formats:
+    - html
+    - json

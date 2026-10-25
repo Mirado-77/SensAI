@@ -14,6 +14,7 @@ from sensai.tools.filesystem.write_file import WriteFileTool
 from sensai.tools.sandbox.docker import docker_unavailable_reason
 from sensai.tools.sandbox.run_command import RunCommandTool
 from sensai.tools.search_code import SearchCodeTool
+from sensai.tools.web.searxng import WebSearchTool
 
 
 def native_tools(config: Config) -> list[Tool]:
@@ -54,3 +55,10 @@ async def sandbox_tools(config: Config) -> tuple[list[Tool], str | None]:
     if reason is not None:
         return [], reason
     return [RunCommandTool(PathGuard(config.files.allowed_roots), sandbox)], None
+
+
+def web_tools(config: Config) -> list[Tool]:
+    """Return the web search tool (T3) when it is enabled in `[web]`."""
+    if not config.web.enabled:
+        return []
+    return [WebSearchTool(config.web)]

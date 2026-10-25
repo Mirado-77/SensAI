@@ -22,8 +22,10 @@ def chat_setup(tmp_path, *lines, **overrides):
     # model call with only the user's messages; their own test files turn them on.
     react = {"enabled": False, "max_plan_steps": 5}
     questions = {"enabled": False, "max_per_turn": 2}
+    # T3 is off so that no test depends on a SearXNG instance; test_web_search covers it.
+    web = {"enabled": False}
     prompts = {"system": ""}
-    defaults = {"storage": storage, "react": react, "questions": questions, "prompts": prompts}
+    defaults = {"storage": storage, "react": react, "questions": questions, "web": web, "prompts": prompts}
     config = load_config(overrides={**defaults, **overrides})
     out, err = io.StringIO(), io.StringIO()
     remaining = iter(lines)

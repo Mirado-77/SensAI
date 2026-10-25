@@ -207,12 +207,15 @@ def chat_setup(tmp_path, *lines, **overrides):
     questions = {"enabled": False, "max_per_turn": 2}
     prompts = {"system": ""}
     sandbox = {"enabled": False}
+    # T3 is off so that no test depends on a SearXNG instance; test_web_search covers it.
+    web = {"enabled": False}
     defaults = {
         "storage": storage,
         "react": react,
         "questions": questions,
         "prompts": prompts,
         "sandbox": sandbox,
+        "web": web,
     }
     config = load_config(overrides={**defaults, **overrides})
     terminal, out, err = make_terminal(scripted(*lines))

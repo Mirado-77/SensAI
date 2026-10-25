@@ -90,7 +90,16 @@ embed_model = "nomic-embed-text"
 chunk_lines = 40
 overlap = 10
 top_k = 5
+
 [guards]
 enabled = true
 # Values of this file are redacted from tool outputs and answers (KEY=VALUE lines).
 env_file = ".env"
+
+[web]
+enabled = true
+# Local SearXNG instance started with `make searxng` (no API key, no quota).
+base_url = "http://localhost:8080"
+max_results = 5
+timeout_s = 10
+max_result_chars = 6000
