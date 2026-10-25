@@ -16,6 +16,7 @@ from rich.text import Text
 from sensai.cli.ask import run_ask
 from sensai.cli.chat import LAST_SESSION, print_sessions, run_chat
 from sensai.cli.index import run_index
+from sensai.cli.schedule import run_schedule
 from sensai.cli.terminal import Terminal
 from sensai.core.config import Config, load_config
 from sensai.core.errors import ConfigError
@@ -49,6 +50,8 @@ def build_parser() -> argparse.ArgumentParser:
     index = commands.add_parser("index", help="embed the codebase for search_code (R1)")
     _add_common_options(index)
     index.add_argument("paths", nargs="*", help="folders to index (default: the allowed roots)")
+    schedule = commands.add_parser("schedule", help="run the scheduled tasks until Ctrl-C (X5)")
+    _add_common_options(schedule)
     return parser
 
 
@@ -76,6 +79,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _run(run_index(config, terminal, args.paths), terminal)
     if args.command == "sessions":
         return print_sessions(config, terminal)
+    if args.command == "schedule":
+        return _run(run_schedule(config, terminal), terminal)
     return _run(run_chat(config, terminal, resume=args.resume), terminal)
 
 

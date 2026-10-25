@@ -31,6 +31,7 @@ from sensai.observability.journal import SqliteEventJournal
 from sensai.safety.guards import install_guards
 from sensai.safety.policy import ApprovalPolicy
 from sensai.safety.secrets import read_env_file
+from sensai.schedule import schedule_tools
 from sensai.tools import native_tools, sandbox_tools, search_tools, web_tools
 from sensai.tools.mcp.servers import McpServers
 from sensai.tools.registry import ToolRegistry
@@ -140,6 +141,7 @@ async def run_chat(
         native += await _sandbox_tools_or_report(config, terminal)
         native += search_tools(config, connection)
         native += web_tools(config)
+        native += schedule_tools(config, connection)
         async with McpServers(config.mcp) as mcp:
             registry = build_registry(native, mcp, terminal)
             deps = _build_deps(config, terminal, connection, gateway, registry)

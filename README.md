@@ -77,6 +77,24 @@ Indexing /home/me/sensai/demo-repo
 6 files indexed (9 chunks), 0 unchanged, 0 removed
 ```
 
+### Scheduled tasks: `sensai schedule`
+
+In the chat, ask for a command to run again at a fixed interval, for example
+`lance les tests tous les 2 jours`. The model shows the interval and the command, and saves the
+task only after your yes. A command that is not in the allowed list is refused: the model then
+offers to add it with `allow_command`, which asks you again before saving it. The allowed list is
+`[scheduler] allowed_commands` in the configuration, plus the commands you approved.
+
+Tasks run only while `sensai schedule` is running, in the sandbox (`[sandbox]`, Docker required):
+
+```bash
+sensai schedule
+```
+
+The scheduler reads the saved tasks every `[scheduler] sync_interval_s` seconds, so a task created
+in the chat is picked up without restarting it. The first run comes one interval after the
+creation. Stop it with Ctrl-C. Each run prints its start and its end, and is recorded in `runs`.
+
 ### Structured answers: `sensai ask`
 
 `sensai ask --schema FILE QUESTION` asks one question and prints a JSON answer that conforms to
@@ -237,6 +255,7 @@ file, one migration per pull request. Migrations are applied when the database i
 | T1 | MCP: hand-written stdio client, our own server `sensai-mcp`, existing servers by configuration, same permissions as native tools | done ([user stories](docs/user-stories/T1.md)) |
 | M1 | Session persistence and user profile: `sensai sessions`, `sensai chat --resume`, `/profile` sent at every turn | done ([user stories](docs/user-stories/M1.md)) |
 | X4 | Structured questions: when the request is ambiguous the model asks one short question with numbered options, the answer goes back to it and is saved | done ([user stories](docs/user-stories/X4.md)) |
+| X5 | Scheduled tasks: the chat plans a command from the allowed list at a fixed interval (approved once, at creation), `sensai schedule` runs them in the sandbox, `[scheduler]` config | done ([user stories](docs/user-stories/X5.md)) |
 | A1 | Bounded ReAct loop: short structured plan shown before acting, one event per action and observation, bounded by `max_steps` | done ([user stories](docs/user-stories/A1.md)) |
 | T5 | Structured output: JSON validated against a schema with one repair attempt (`sensai ask --schema`), tool arguments validated before any execution | done ([user stories](docs/user-stories/T5.md)) |
 | T4 | File access limited to allowed roots: `read_file`, `list_dir`, `write_file`, `edit_file`, path guard (traversal and symlinks), atomic writes, untrusted content marking | done ([user stories](docs/user-stories/T4.md)) |

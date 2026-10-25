@@ -3,7 +3,14 @@
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 from sensai.core.errors import ConfigError
 from sensai.core.types import Decision, Risk
@@ -134,6 +141,22 @@ class GuardsConfig(_Section):
     env_file: Path
 
 
+class SchedulerConfig(_Section):
+    """Scheduled tasks (X5): commands run at a fixed interval by `sensai schedule`."""
+
+    enabled: bool
+    min_interval_minutes: int = Field(gt=0)
+    sync_interval_s: float = Field(gt=0)
+    allowed_commands: list[list[str]] = Field(default_factory=list)
+
+    @field_validator("allowed_commands")
+    @classmethod
+    def _complete_commands(cls, commands: list[list[str]]) -> list[list[str]]:
+        if any(not command or not all(command) for command in commands):
+            raise ValueError("each allowed command needs a program and non-empty arguments")
+        return commands
+
+
 class Config(_Section):
     model: ModelConfig
     runtime: RuntimeConfig
@@ -148,6 +171,7 @@ class Config(_Section):
     rag: RagConfig
     guards: GuardsConfig
     web: WebConfig
+    scheduler: SchedulerConfig
 
 
 def _read_toml(path: Path) -> dict[str, Any]:
