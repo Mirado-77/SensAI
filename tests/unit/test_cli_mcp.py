@@ -25,7 +25,13 @@ def chat_setup(tmp_path, *lines, **overrides):
     # T3 is off so that no test depends on a SearXNG instance; test_web_search covers it.
     web = {"enabled": False}
     prompts = {"system": ""}
-    defaults = {"storage": storage, "react": react, "questions": questions, "web": web, "prompts": prompts}
+    defaults = {
+        "storage": storage,
+        "react": react,
+        "questions": questions,
+        "web": web,
+        "prompts": prompts,
+    }
     config = load_config(overrides={**defaults, **overrides})
     out, err = io.StringIO(), io.StringIO()
     remaining = iter(lines)
