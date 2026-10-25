@@ -7,6 +7,7 @@ Exit codes: 0 success, 1 model or schema-conformance failure, 2 unusable schema,
 database.
 """
 
+import asyncio
 import dataclasses
 import json
 import sqlite3
@@ -108,10 +109,19 @@ async def _ask(
 
     emit(RUN_STARTED, {"session_id": session_id, "model": config.model.name})
     user = Message("user", question)
+    timeout_s = config.runtime.timeout_s
     try:
-        result = await generate_structured(
-            gateway, [user], schema, max_repairs=config.structured.max_repairs, on_event=emit
+        # The gateway timeout only covers silence: a model that never stops streaming needs this.
+        result = await asyncio.wait_for(
+            generate_structured(
+                gateway, [user], schema, max_repairs=config.structured.max_repairs, on_event=emit
+            ),
+            timeout_s,
         )
+    except asyncio.TimeoutError:
+        error = {"error_type": "RunLimitError", "error": f"Délai dépassé : {timeout_s} s."}
+        emit(RUN_FAILED, {"session_id": session_id, **error})
+        return None
     except SensaiError as exc:
         error = {"error_type": type(exc).__name__, "error": str(exc)}
         emit(RUN_FAILED, {"session_id": session_id, **error})
