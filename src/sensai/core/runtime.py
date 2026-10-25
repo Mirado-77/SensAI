@@ -4,8 +4,9 @@
         -> ANSWER | TOOL_CALL -> POLICY -> APPROVAL? -> EXECUTE -> MODEL_STREAM
     -> EXIT_HOOKS -> PERSIST -> completed | cancelled | failed
 
-By default a turn makes a single model call. Features that need more (guardrails, summaries,
-caches) plug into `entry_hooks` / `exit_hooks` without changing the loop. With `[react]`
+By default a turn makes a single model call; a reply with neither text nor tool call gets one
+reminder (EMPTY_ANSWER_REMINDER), then is accepted as is. Features that need more (guardrails,
+summaries, caches) plug into `entry_hooks` / `exit_hooks` without changing the loop. With `[react]`
 enabled (A1), one structured planning call comes first and every action / observation of the
 tool loop is an event (see `sensai.core.react`). With `[questions]` enabled (X4), the model
 can call `ask_user`, handled here through the UserChannel (see `sensai.core.questions`).
@@ -87,6 +88,9 @@ from sensai.safety.untrusted import wrap_untrusted
 from sensai.tools.registry import ToolRegistry
 
 RunStatus = Literal["completed", "cancelled", "failed"]
+
+
+EMPTY_ANSWER_REMINDER = "Your last reply was empty. Answer the user now, in text."
 
 
 @dataclass(frozen=True)
@@ -238,11 +242,17 @@ class AgentRuntime:
     async def _model_loop(self, ctx: RunContext, state: _RunState) -> Message:
         """Call the model until it answers without asking for a tool."""
         specs = self._tool_specs() or None
+        reminded = False
         while True:
             self._count_step(state)
             assistant, call_ids = await self._stream_model(ctx, state, specs)
             if not assistant.tool_calls:
-                return assistant
+                if assistant.content.strip() or reminded:
+                    return assistant
+                # Thinking models (qwen3.5) sometimes stop after their reasoning, with no text.
+                reminded = True
+                ctx.messages.append(Message("system", EMPTY_ANSWER_REMINDER))
+                continue
             self._emit_react(REACT_ACTION, ctx, state, tools=[c.name for c in assistant.tool_calls])
             results = await self._run_tools(ctx, state, assistant, call_ids)
             observed = [{"tool": c.name, "is_error": r.is_error} for c, r in results]

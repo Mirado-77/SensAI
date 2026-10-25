@@ -1,0 +1,8 @@
+id = "ev1-bug-completion-rate"
+question = "Pourquoi le test test_completion_rate_empty_list échoue-t-il dans taskman ?"
+reference = "completion_rate dans taskman/stats.py divise count_done(tasks) par len(tasks) sans traiter la liste vide : avec [] cela lève ZeroDivisionError au lieu de renvoyer 0.0 comme le promet la docstring."
+criteria = [
+  "situe le problème dans completion_rate de taskman/stats.py",
+  "explique la division par zéro (ZeroDivisionError) sur une liste vide",
+  "indique que la fonction devrait renvoyer 0.0 dans ce cas",
+]

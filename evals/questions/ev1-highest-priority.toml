@@ -1,0 +1,8 @@
+id = "ev1-highest-priority"
+question = "Comment fonctionne highest_priority et que renvoie-t-elle si toutes les tâches sont terminées ?"
+reference = "highest_priority (taskman/stats.py) garde les tâches non terminées et renvoie celle dont la priorité est la plus grande (max sur priority) ; s'il n'en reste aucune, elle renvoie None."
+criteria = [
+  "explique que seules les tâches non terminées sont considérées",
+  "indique que la plus grande valeur de priority l'emporte",
+  "indique que None est renvoyé quand toutes les tâches sont terminées",
+]

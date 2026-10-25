@@ -79,6 +79,24 @@ Indexing /home/me/sensai/demo-repo
 6 files indexed (9 chunks), 0 unchanged, 0 removed
 ```
 
+### Scheduled tasks: `sensai schedule`
+
+In the chat, ask for a command to run again at a fixed interval, for example
+`lance les tests tous les 2 jours`. The model shows the interval and the command, and saves the
+task only after your yes. A command that is not in the allowed list is refused: the model then
+offers to add it with `allow_command`, which asks you again before saving it. The allowed list is
+`[scheduler] allowed_commands` in the configuration, plus the commands you approved.
+
+Tasks run only while `sensai schedule` is running, in the sandbox (`[sandbox]`, Docker required):
+
+```bash
+sensai schedule
+```
+
+The scheduler reads the saved tasks every `[scheduler] sync_interval_s` seconds, so a task created
+in the chat is picked up without restarting it. The first run comes one interval after the
+creation. Stop it with Ctrl-C. Each run prints its start and its end, and is recorded in `runs`.
+
 ### Structured answers: `sensai ask`
 
 `sensai ask --schema FILE QUESTION` asks one question and prints a JSON answer that conforms to
@@ -118,6 +136,22 @@ sensai chat --prompt v1         # roll back for this chat
 In the chat, `/prompt` shows the active version and `/prompt v1` switches to it for the next
 turns, without losing the history. Each run records `<version>@<sha>`, so an edited file shows
 up as a new line in `stats`.
+
+### Answer quality: `make eval-quality`
+
+`make eval-quality` (or `python -m sensai.evals.ev1`) asks every question of `evals/questions/`
+(one TOML file per question, with a `reference` answer and `criteria`) to the configured model,
+each in a fresh session on a read-only copy of `demo-repo/`, with the active prompt version and
+`search_code` when the copy can be indexed. A second model call, the judge, grades each answer
+against its reference: `correct`, `partial` or `incorrect`, a score from 1 to 5 and a reason. The
+report goes to `evals/reports/ev1-<date>.md` and `.json`, with the prompt version, the mean score
+and every grade.
+
+```bash
+make eval-quality ARGS="--prompt v1"                # grade another prompt version
+make eval-quality ARGS="--judge-model qwen3.5:9b"   # judge with another model
+make eval-quality ARGS="--only ev1-champs-task --no-index"
+```
 
 ### Tools from MCP servers
 
@@ -225,6 +259,8 @@ CLI -> AgentRuntime -> OllamaGateway -> Ollama
 | `make format` | Fix style with ruff |
 | `make ollama` | Start an Ollama server in Docker on port 11434 |
 | `make chat ARGS="..."` | Start the chat |
+| `make eval` | Run the EV4 attack corpus and write its report in `evals/reports/` |
+| `make eval-quality` | Grade the answers to `evals/questions/` with the LLM judge (EV1) |
 | `make sandbox-image` | Build the Docker image used by `run_command` |
 
 Database changes go in a new `src/sensai/db/migrations/NNN_<feature-id>_<description>.sql`
@@ -258,12 +294,14 @@ file, one migration per pull request. Migrations are applied when the database i
 | A4 | Versioned system prompts: one file per version, active version in config or `/prompt` in the chat, version recorded on every run, `sensai prompts list`, `diff` and `stats` to compare and roll back | done ([user stories](docs/user-stories/A4.md)) |
 | X2 | Interruption and fork: `Ctrl-C` stops the answer and keeps the partial text as interrupted, `/history` and `/fork <n>` branch the conversation into a new session | done ([user stories](docs/user-stories/X2.md)) |
 | X4 | Structured questions: when the request is ambiguous the model asks one short question with numbered options, the answer goes back to it and is saved | done ([user stories](docs/user-stories/X4.md)) |
+| X5 | Scheduled tasks: the chat plans a command from the allowed list at a fixed interval (approved once, at creation), `sensai schedule` runs them in the sandbox, `[scheduler]` config | done ([user stories](docs/user-stories/X5.md)) |
 | A1 | Bounded ReAct loop: short structured plan shown before acting, one event per action and observation, bounded by `max_steps` | done ([user stories](docs/user-stories/A1.md)) |
 | T5 | Structured output: JSON validated against a schema with one repair attempt (`sensai ask --schema`), tool arguments validated before any execution | done ([user stories](docs/user-stories/T5.md)) |
 | T4 | File access limited to allowed roots: `read_file`, `list_dir`, `write_file`, `edit_file`, path guard (traversal and symlinks), atomic writes, untrusted content marking | done ([user stories](docs/user-stories/T4.md)) |
 | A3 | Diff shown before any file write: `write_file` and `edit_file` build a unified diff the user approves or refuses, any tool can provide its own preview | done ([user stories](docs/user-stories/A3.md)) |
 | T2 | Commands in a Docker sandbox: `run_command` chosen by the model, non-root, no network, read-only mount, CPU/memory/process limits, timeout and Ctrl-C kill the container, truncated output, clear fallback without Docker | done ([user stories](docs/user-stories/T2.md)) |
 | R1 | Codebase search (RAG): `sensai index` embeds chunks of the allowed roots with Ollama, `search_code` returns the closest excerpts with `path:lines`, incremental re-indexing | done ([user stories](docs/user-stories/R1.md)) |
+| EV1 | Offline LLM judge: question corpus in `evals/questions/` answered with the active prompt version and `search_code`, each answer graded against a reference (verdict, score, reason), JSON and Markdown report with `make eval-quality` | done ([user stories](docs/user-stories/EV1.md)) |
 | EV4 | Attack corpus in `evals/attacks/`: file injection, tool injection, paths outside the roots, secret leak, dangerous command; `make eval` writes a JSON and a Markdown report in `evals/reports/` | done ([user stories](docs/user-stories/EV4.md)) |
 | EV2 | Guards: user messages and tool outputs refused when they try to override the instructions, `.env` values and common key formats redacted from tool outputs and answers, `[guards]` config | done ([user stories](docs/user-stories/EV2.md)) |
 | T3 | Web search through a local SearXNG (`make searxng`, no API key, no quota): `web_search` with `allowed_domains` / `blocked_domains`, results marked untrusted, `[web]` config | done ([user stories](docs/user-stories/T3.md)) |

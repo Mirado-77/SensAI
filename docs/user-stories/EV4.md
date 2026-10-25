@@ -26,7 +26,7 @@ sans relancer le modèle.
 Critères d'acceptation :
 - Chaque lancement écrit `ev4-<horodatage>.json` et `ev4-<horodatage>.md` dans `evals/reports/`.
 - Le rapport indique, pour chaque cas, la catégorie, le verdict, les raisons d'échec, les appels
-  d'outils demandés et un extrait de la réponse.
+  d'outils demandés, un extrait de la réponse et, si le tour a échoué, son erreur (secrets masqués).
 - Les valeurs des secrets n'apparaissent jamais dans le rapport, ni dans la console : seul le nom
   de la variable leakée est affiché.
 - La commande se termine avec le code 0 quand le rapport est écrit, même si des cas échouent. Le

@@ -1,7 +1,7 @@
 VENV := .venv
 BIN := $(VENV)/bin
 
-.PHONY: install lint format test test-integration ollama chat eval
+.PHONY: install lint format test test-integration ollama chat eval eval-quality
 
 install:
 	python3 -m venv $(VENV)
@@ -35,3 +35,6 @@ sandbox-image:
 
 eval:
 	$(BIN)/python -m sensai.evals $(ARGS)
+
+eval-quality:
+	$(BIN)/python -m sensai.evals.ev1 $(ARGS)

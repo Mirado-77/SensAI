@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from sensai.core.config import AllowedRoot, Config
-from sensai.core.contracts import ModelGateway, Tool
+from sensai.core.contracts import EventSink, ModelGateway, Tool
 from sensai.core.events import Event
 from sensai.core.runtime import AgentRuntime, RunResult, RuntimeDeps
 from sensai.core.types import ApprovalRequest
@@ -17,7 +17,7 @@ from sensai.evals.judge import Judgement, judge, requested_calls
 from sensai.memory.sqlite_store import SqliteSessionStore
 from sensai.model.ollama import OllamaGateway
 from sensai.safety.policy import ApprovalPolicy
-from sensai.safety.secrets import read_env_file
+from sensai.safety.secrets import SecretRedactor, read_env_file
 from sensai.tools import native_tools, sandbox_tools
 from sensai.tools.registry import ToolRegistry
 
@@ -32,6 +32,7 @@ class CaseResult:
     status: str
     answer: str = ""
     calls: list[str] = field(default_factory=list)
+    error: str | None = None
 
 
 class _Recorder:
@@ -145,24 +146,38 @@ async def _execute(turn: _Turn, root: Path) -> CaseResult:
         connection.close()
     events = turn.recorder.events
     judgement = judge(turn.case, events, result.answer, result.status == "completed", secrets)
-    return CaseResult(turn.case, judgement, result.status, result.answer, requested_calls(events))
+    # The error goes into the report: it must not carry a secret of the copied .env either.
+    error = SecretRedactor(secrets.values()).redact(result.error)[0] if result.error else None
+    calls = requested_calls(events)
+    return CaseResult(turn.case, judgement, result.status, result.answer, calls, error)
 
 
 async def _run_turn(turn: _Turn, connection: sqlite3.Connection) -> RunResult:
     store = SqliteSessionStore(connection)
-    deps = RuntimeDeps(
-        gateway=turn.gateway,
-        store=store,
-        sink=turn.recorder,
-        channel=AutoDenyChannel(),
-        registry=ToolRegistry(turn.tools),
-        policy=ApprovalPolicy.from_config(turn.config.policy),
-    )
-    runtime = AgentRuntime(
-        deps,
-        turn.config.runtime,
-        turn.config.model.name,
-        react=turn.config.react,
-        max_repairs=turn.config.structured.max_repairs,
-    )
+    runtime = build_runtime(turn.config, turn.gateway, turn.tools, turn.recorder, store)
     return await runtime.run_turn(store.create_session(), turn.case.prompt)
+
+
+def build_runtime(
+    config: Config,
+    gateway: ModelGateway,
+    tools: list[Tool],
+    sink: EventSink,
+    store: SqliteSessionStore,
+) -> AgentRuntime:
+    """The chat runtime, with every approval refused so that no run changes the repository."""
+    deps = RuntimeDeps(
+        gateway=gateway,
+        store=store,
+        sink=sink,
+        channel=AutoDenyChannel(),
+        registry=ToolRegistry(tools),
+        policy=ApprovalPolicy.from_config(config.policy),
+    )
+    return AgentRuntime(
+        deps,
+        config.runtime,
+        config.model.name,
+        react=config.react,
+        max_repairs=config.structured.max_repairs,
+    )

@@ -1,3 +1,4 @@
+import asyncio
 import io
 import json
 import sqlite3
@@ -81,6 +82,23 @@ async def test_a_non_conforming_answer_fails_with_exit_code_1(setup):
     assert "pas produit de JSON conforme" in err.getvalue()
     assert rows(db_path, "SELECT status FROM runs") == [("failed",)]
     assert rows(db_path, "SELECT count(*) FROM messages") == [(0,)]
+
+
+class EndlessGateway:
+    async def stream_chat(self, messages, tools=None, schema=None):
+        while True:
+            await asyncio.sleep(0.01)
+            yield Chunk(" ")
+
+
+async def test_a_model_that_never_stops_is_cut_after_timeout_s(setup):
+    config, terminal, schema_path, db_path, out, err = setup
+    config = config.model_copy(
+        update={"runtime": config.runtime.model_copy(update={"timeout_s": 0.05})}
+    )
+    assert await run_ask(config, terminal, schema_path, "Find the bug", EndlessGateway()) == 1
+    assert "Délai dépassé" in err.getvalue()
+    assert rows(db_path, "SELECT status FROM runs") == [("failed",)]
 
 
 async def test_an_unreachable_model_fails_with_exit_code_1(setup):
