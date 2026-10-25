@@ -14,6 +14,7 @@ can call `ask_user`, handled here through the UserChannel (see `sensai.core.ques
 Event payloads (all events also carry `run_id`):
 
 - run.started: session_id, model, prompt_version (A4: `<name>@<sha>` or None)
+- prompt.examples: examples (A7: ids of the few-shot examples sent before the conversation)
 - model.chunk: text
 - model.tool_call: call_id, name, args
 - model.usage: prompt_tokens, completion_tokens
@@ -49,6 +50,7 @@ from sensai.core.events import (
     MODEL_CHUNK,
     MODEL_TOOL_CALL,
     MODEL_USAGE,
+    PROMPT_EXAMPLES,
     QUESTION_ANSWERED,
     QUESTION_REQUESTED,
     REACT_ACTION,
@@ -63,6 +65,7 @@ from sensai.core.events import (
     TOOL_STARTED,
     make_event,
 )
+from sensai.core.fewshots import FewShots
 from sensai.core.questions import (
     ASK_SPEC,
     ASK_TOOL,
@@ -158,6 +161,7 @@ class AgentRuntime:
         self._model_name = model_name
         self.system_prompt = system_prompt
         self.prompt_version: str | None = None
+        self.fewshots: FewShots | None = None
         self.entry_hooks: list[Hook] = []
         self.exit_hooks: list[Hook] = []
         self.result_hooks: list[ResultHook] = []
@@ -212,6 +216,10 @@ class AgentRuntime:
 
     def _build_context(self, ctx: RunContext, state: _RunState) -> None:
         prefix = [Message("system", self.system_prompt)] if self.system_prompt else []
+        examples = self.fewshots.select(ctx.user_text) if self.fewshots else []
+        if examples:
+            self._emit(PROMPT_EXAMPLES, ctx.run_id, examples=[example.id for example in examples])
+        prefix += [message for example in examples for message in example.messages()]
         user_message = Message("user", ctx.user_text)
         history = self._deps.store.history(ctx.session_id)
         ctx.messages = [*prefix, *history, user_message]

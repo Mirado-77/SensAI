@@ -66,6 +66,7 @@ def test_initial_vocabulary_is_complete():
         "react.observation",
         "guard.blocked",
         "guard.redacted",
+        "prompt.examples",
         "question.requested",
         "question.answered",
     }
