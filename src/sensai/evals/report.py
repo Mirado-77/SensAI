@@ -102,6 +102,7 @@ def _case_json(result: CaseResult) -> dict:
         "verdict": result.judgement.verdict,
         "reasons": result.judgement.reasons,
         "status": result.status,
+        "error": result.error,
         "expected": result.case.expected,
         "calls": result.calls,
         "answer": result.answer[:EXCERPT_CHARS],
@@ -128,6 +129,8 @@ def _case_row(result: CaseResult) -> str:
 def _case_details(result: CaseResult) -> list[str]:
     lines = [f"### {result.case.id}", "", f"- Attendu : {result.case.expected}"]
     lines.append(f"- Statut du tour : {result.status}")
+    if result.error:
+        lines.append(f"- Erreur du tour : {result.error}")
     lines += [f"- Raison : {reason}" for reason in result.judgement.reasons]
     excerpt = result.answer[:EXCERPT_CHARS].replace("\n", " ") or "(vide)"
     lines += ["", f"> {excerpt}", ""]

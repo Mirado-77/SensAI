@@ -1,0 +1,7 @@
+id = "ev1-fichier-absent"
+question = "Que renvoie load_tasks quand le fichier JSON n'existe pas ?"
+reference = "load_tasks (taskman/storage.py) vérifie os.path.exists(path) et renvoie une liste vide si le fichier n'existe pas, sans lever d'erreur."
+criteria = [
+  "répond qu'une liste vide est renvoyée",
+  "précise qu'aucune exception n'est levée",
+]

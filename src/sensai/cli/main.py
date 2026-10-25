@@ -14,14 +14,13 @@ from rich.console import Console
 from rich.text import Text
 
 from sensai.cli.ask import run_ask
-from sensai.cli.chat import LAST_SESSION, print_sessions, run_chat
+from sensai.cli.chat import LAST_SESSION, _open_database, print_sessions, run_chat
 from sensai.cli.index import run_index
-from sensai.cli.schedule import run_schedule
 from sensai.cli.prompts import print_prompt_diff, print_prompt_stats, print_prompt_versions
+from sensai.cli.schedule import run_schedule
 from sensai.cli.terminal import Terminal
 from sensai.core.config import Config, load_config
 from sensai.core.errors import ConfigError
-from sensai.db.connection import connect
 from sensai.observability.prompt_stats import prompt_stats
 
 with contextlib.suppress(ImportError):
@@ -104,7 +103,9 @@ def _prompts(args: argparse.Namespace, config: Config, terminal: Terminal) -> in
     if args.action == "diff":
         return print_prompt_diff(terminal, args.old, args.new)
     if args.action == "stats":
-        connection = connect(config.storage.db_path)
+        connection = _open_database(config, terminal)
+        if connection is None:
+            return 2
         try:
             return print_prompt_stats(prompt_stats(connection), terminal)
         finally:

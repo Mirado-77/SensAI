@@ -13,8 +13,8 @@ from sensai.core.fakes import (
     FakeUserChannel,
     InMemorySessionStore,
 )
-from sensai.core.runtime import AgentRuntime, RuntimeDeps
-from sensai.core.types import Chunk, Done, ToolCall, ToolResult, ToolSpec, Usage
+from sensai.core.runtime import EMPTY_ANSWER_REMINDER, AgentRuntime, RuntimeDeps
+from sensai.core.types import Chunk, Done, Message, ToolCall, ToolResult, ToolSpec, Usage
 from sensai.safety.policy import ApprovalPolicy
 from sensai.tools.registry import ToolRegistry
 
@@ -133,6 +133,21 @@ async def test_events_share_the_run_id_and_carry_their_payload():
         "steps": 1,
         "tool_calls": 0,
     }
+
+
+async def test_empty_reply_gets_one_reminder_that_is_not_saved():
+    s = build([Usage(5, 60)], [Chunk("Une liste vide.")])
+    result = await s.runtime.run_turn(s.session_id, "Hi")
+    assert (result.status, result.answer) == ("completed", "Une liste vide.")
+    assert s.gateway.calls[1].messages[-1] == Message("system", EMPTY_ANSWER_REMINDER)
+    assert saved(s) == [("user", "Hi"), ("assistant", "Une liste vide.")]
+
+
+async def test_second_empty_reply_is_accepted_without_looping():
+    s = build([Chunk(" ")], [])
+    result = await s.runtime.run_turn(s.session_id, "Hi")
+    assert (result.status, result.answer) == ("completed", "")
+    assert len(s.gateway.calls) == 2
 
 
 async def test_previous_turns_are_sent_to_the_model():
