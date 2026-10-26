@@ -15,6 +15,8 @@ Event payloads (all events also carry `run_id`):
 
 - run.started: session_id, model, prompt_version (A4: `<name>@<sha>` or None)
 - prompt.examples: examples (A7: ids of the few-shot examples sent before the conversation)
+
+`recall` (M3) adds the project memory closest to the message as a system message, not saved.
 - model.chunk: text
 - model.tool_call: call_id, name, args
 - model.usage: prompt_tokens, completion_tokens
@@ -162,6 +164,7 @@ class AgentRuntime:
         self.system_prompt = system_prompt
         self.prompt_version: str | None = None
         self.fewshots: FewShots | None = None
+        self.recall: Callable[[str], str | None] | None = None  # M3 project memory
         self.entry_hooks: list[Hook] = []
         self.exit_hooks: list[Hook] = []
         self.result_hooks: list[ResultHook] = []
@@ -216,6 +219,9 @@ class AgentRuntime:
 
     def _build_context(self, ctx: RunContext, state: _RunState) -> None:
         prefix = [Message("system", self.system_prompt)] if self.system_prompt else []
+        memory = self.recall(ctx.user_text) if self.recall else None
+        if memory:
+            prefix.append(Message("system", memory))
         examples = self.fewshots.select(ctx.user_text) if self.fewshots else []
         if examples:
             self._emit(PROMPT_EXAMPLES, ctx.run_id, examples=[example.id for example in examples])

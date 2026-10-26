@@ -11,6 +11,7 @@ from rich.text import Text
 
 from sensai.cli.channel import CliUserChannel
 from sensai.cli.fork import FORK_COMMAND, HISTORY_COMMAND, print_history, run_fork_command
+from sensai.cli.memory import MEMORY_COMMAND, run_memory_command
 from sensai.cli.profile import (
     PROFILE_COMMAND,
     PROFILE_ID,
@@ -29,6 +30,8 @@ from sensai.core.fewshots import fewshots_from
 from sensai.core.prompts import load_version
 from sensai.core.runtime import AgentRuntime, RunResult, RuntimeDeps
 from sensai.db.connection import connect
+from sensai.memory import memory_recall, memory_tools
+from sensai.memory.facts import FactStore
 from sensai.memory.sqlite_store import SqliteSessionStore
 from sensai.model.ollama import OllamaGateway
 from sensai.observability.journal import SqliteEventJournal
@@ -90,6 +93,7 @@ async def chat_loop(
     store: SqliteSessionStore,
     registry: ToolRegistry | None = None,
     prompt: ChatPrompt | None = None,
+    facts: FactStore | None = None,
 ) -> None:
     """Read lines and run one turn per line, until /exit, Ctrl-D or Ctrl-C at the prompt."""
     while True:
@@ -110,6 +114,8 @@ async def chat_loop(
             prompt = prompt or ChatPrompt(None)
             run_prompt_command(prompt, terminal, text)
             prompt.apply(runtime)
+        elif text.split(" ", 1)[0] == MEMORY_COMMAND:
+            run_memory_command(facts, terminal, text)
         elif text == HISTORY_COMMAND:
             print_history(store, terminal, session_id)
         elif text.split(" ", 1)[0] == FORK_COMMAND:
@@ -163,6 +169,7 @@ async def run_chat(
         native += search_tools(config, connection)
         native += web_tools(config)
         native += schedule_tools(config, connection)
+        native += memory_tools(config, connection)
         async with McpServers(config.mcp) as mcp:
             registry = build_registry(native, mcp, terminal)
             deps = _build_deps(config, terminal, connection, gateway, registry)
@@ -178,9 +185,11 @@ async def run_chat(
             )
             prompt.apply(runtime)
             runtime.fewshots = fewshots
+            runtime.recall = memory_recall(config, connection)
             install_guards(runtime, config.guards, read_env_file(config.guards.env_file))
             terminal.console.print(Text(_banner(config, registry, prompt), "dim"))
-            await chat_loop(runtime, session_id, terminal, store, registry, prompt)
+            facts = FactStore(connection) if config.memory.enabled else None
+            await chat_loop(runtime, session_id, terminal, store, registry, prompt, facts)
         return 0
     finally:
         connection.close()

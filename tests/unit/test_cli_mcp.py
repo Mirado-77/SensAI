@@ -27,6 +27,8 @@ def chat_setup(tmp_path, *lines, **overrides):
     # X5 is off so that the tool list stays the one of each test; test_schedule covers it.
     prompts = {"system": ""}
     scheduler = {"enabled": False}
+    # M3 is off for the same reason; test_memory covers it.
+    memory = {"enabled": False}
     defaults = {
         "storage": storage,
         "react": react,
@@ -34,6 +36,7 @@ def chat_setup(tmp_path, *lines, **overrides):
         "web": web,
         "prompts": prompts,
         "scheduler": scheduler,
+        "memory": memory,
     }
     config = load_config(overrides={**defaults, **overrides})
     out, err = io.StringIO(), io.StringIO()
