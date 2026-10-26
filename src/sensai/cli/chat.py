@@ -25,6 +25,7 @@ from sensai.core.bus import EventBus
 from sensai.core.config import Config
 from sensai.core.contracts import ModelGateway, Tool
 from sensai.core.errors import ConfigError, SensaiError
+from sensai.core.fewshots import fewshots_from
 from sensai.core.prompts import load_version
 from sensai.core.runtime import AgentRuntime, RunResult, RuntimeDeps
 from sensai.db.connection import connect
@@ -143,6 +144,7 @@ async def run_chat(
     """
     try:
         version = load_version(config.prompts.system) if config.prompts.system else None
+        fewshots = fewshots_from(config.prompts.examples)
     except ConfigError as exc:
         terminal.errors.print(Text(f"Erreur : {exc}", style="bold red"))
         return 2
@@ -175,6 +177,7 @@ async def run_chat(
                 questions=config.questions,
             )
             prompt.apply(runtime)
+            runtime.fewshots = fewshots
             install_guards(runtime, config.guards, read_env_file(config.guards.env_file))
             terminal.console.print(Text(_banner(config, registry, prompt), "dim"))
             await chat_loop(runtime, session_id, terminal, store, registry, prompt)
@@ -235,6 +238,8 @@ def build_registry(native: list[Tool], mcp: McpServers, terminal: Terminal) -> T
 def _banner(config: Config, registry: ToolRegistry, prompt: ChatPrompt) -> str:
     tools = f"{len(registry)} tools ({TOOLS_COMMAND})" if len(registry) else "no tools"
     version = prompt.version.label if prompt.version else "none"
+    if config.prompts.examples:
+        version += f" + {config.prompts.examples} examples"
     return (
         f"SENSAI | model: {config.model.name} | prompt: {version} ({PROMPT_COMMAND}) | {tools}"
         " | /exit or Ctrl-D to quit"

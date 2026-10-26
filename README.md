@@ -153,6 +153,23 @@ make eval-quality ARGS="--judge-model qwen3.5:9b"   # judge with another model
 make eval-quality ARGS="--only ev1-champs-task --no-index"
 ```
 
+### Few-shot examples and prompt variants
+
+`configs/prompts/examples/` holds question/answer pairs (one TOML file each, with `id`, `question`
+and `answer`) that show the model the expected style. With `[prompts] examples = N`, each turn
+sends the `N` examples sharing the most words with the message, after the system prompt; an
+example sharing no word is never sent, and examples are never saved in the session. The default
+is 0: measure a variant with EV1 before turning it on.
+
+```bash
+make eval-quality ARGS="--examples 0"    # variant A: no few-shots
+make eval-quality ARGS="--examples 2"    # variant B: two few-shots per question
+make eval-compare ARGS="evals/reports/ev1-A.json evals/reports/ev1-B.json"
+```
+
+`make eval-compare` prints the variants, the mean score and each question side by side, with the
+difference of B against A.
+
 ### Tools from MCP servers
 
 The model can call tools served over MCP (stdio). Declare servers in a `--config` file:
@@ -261,6 +278,7 @@ CLI -> AgentRuntime -> OllamaGateway -> Ollama
 | `make chat ARGS="..."` | Start the chat |
 | `make eval` | Run the EV4 attack corpus and write its report in `evals/reports/` |
 | `make eval-quality` | Grade the answers to `evals/questions/` with the LLM judge (EV1) |
+| `make eval-compare ARGS="A.json B.json"` | Compare two EV1 reports, variant B against variant A (A7) |
 | `make sandbox-image` | Build the Docker image used by `run_command` |
 
 Database changes go in a new `src/sensai/db/migrations/NNN_<feature-id>_<description>.sql`
@@ -302,6 +320,7 @@ file, one migration per pull request. Migrations are applied when the database i
 | T2 | Commands in a Docker sandbox: `run_command` chosen by the model, non-root, no network, read-only mount, CPU/memory/process limits, timeout and Ctrl-C kill the container, truncated output, clear fallback without Docker | done ([user stories](docs/user-stories/T2.md)) |
 | R1 | Codebase search (RAG): `sensai index` embeds chunks of the allowed roots with Ollama, `search_code` returns the closest excerpts with `path:lines`, incremental re-indexing | done ([user stories](docs/user-stories/R1.md)) |
 | EV1 | Offline LLM judge: question corpus in `evals/questions/` answered with the active prompt version and `search_code`, each answer graded against a reference (verdict, score, reason), JSON and Markdown report with `make eval-quality` | done ([user stories](docs/user-stories/EV1.md)) |
+| A7 | Few-shot examples: the closest examples of `configs/prompts/examples/` sent before the conversation (`[prompts] examples`), EV1 reports record the variant and `make eval-compare` compares two of them question by question | done ([user stories](docs/user-stories/A7.md)) |
 | EV4 | Attack corpus in `evals/attacks/`: file injection, tool injection, paths outside the roots, secret leak, dangerous command; `make eval` writes a JSON and a Markdown report in `evals/reports/` | done ([user stories](docs/user-stories/EV4.md)) |
 | EV2 | Guards: user messages and tool outputs refused when they try to override the instructions, `.env` values and common key formats redacted from tool outputs and answers, `[guards]` config | done ([user stories](docs/user-stories/EV2.md)) |
 | T3 | Web search through a local SearXNG (`make searxng`, no API key, no quota): `web_search` with `allowed_domains` / `blocked_domains`, results marked untrusted, `[web]` config | done ([user stories](docs/user-stories/T3.md)) |

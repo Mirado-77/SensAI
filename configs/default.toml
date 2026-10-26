@@ -34,6 +34,9 @@ max_per_turn = 2
 # Versioned system prompts (A4): `system` names a file of configs/prompts/system (without .txt).
 # A new version is a new file; going back to an older name is the rollback. "" sends none.
 system = "v2"
+# Few-shot examples (A7): at each turn, the `examples` files of configs/prompts/examples closest to
+# the message are sent before the conversation. 0 sends none; compare variants with EV1 first.
+examples = 0
 
 [storage]
 db_path = "~/.sensai/sensai.db"

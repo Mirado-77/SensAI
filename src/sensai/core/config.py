@@ -59,9 +59,11 @@ class QuestionsConfig(_Section):
 
 
 class PromptsConfig(_Section):
-    """Versioned system prompts (A4). `system` names a file of configs/prompts/system; "" = none."""
+    """Versioned system prompts (A4). `system` names a file of configs/prompts/system; "" = none.
+    `examples` is the number of few-shot examples of configs/prompts/examples sent per turn (A7)."""
 
     system: str = Field(pattern=r"^([A-Za-z0-9_-]+)?$")
+    examples: int = Field(ge=0, le=5)
 
 
 class StorageConfig(_Section):

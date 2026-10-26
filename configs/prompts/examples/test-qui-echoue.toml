@@ -1,0 +1,7 @@
+id = "test-qui-echoue"
+question = "Pourquoi le test test_parse_date_empty échoue-t-il dans le projet agenda ?"
+answer = """J'ai lu `agenda/dates.py` et `tests/test_dates.py`.
+
+`parse_date` appelle `text.split("-")` puis lit `parts[0]` sans vérifier que `text` n'est pas vide : avec `""`, `int("")` lève `ValueError`, alors que le test attend `None`.
+
+Correction : renvoyer `None` en tête de `parse_date` quand `text` est vide."""
