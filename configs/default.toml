@@ -38,6 +38,13 @@ system = "v2"
 # the message are sent before the conversation. 0 sends none; compare variants with EV1 first.
 examples = 0
 
+[memory]
+# Project memory (M3): the model saves conventions, decisions, facts and relations in the
+# database (each change approved by the user). At every turn the conventions and the `recall`
+# records closest to the message are sent to the model; 0 sends none.
+enabled = true
+recall = 8
+
 [storage]
 db_path = "~/.sensai/sensai.db"
 

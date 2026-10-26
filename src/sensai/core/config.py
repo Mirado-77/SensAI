@@ -66,6 +66,13 @@ class PromptsConfig(_Section):
     examples: int = Field(ge=0, le=5)
 
 
+class MemoryConfig(_Section):
+    """Project memory (M3): facts saved by the model, `recall` of them sent at each turn."""
+
+    enabled: bool
+    recall: int = Field(ge=0, le=50)
+
+
 class StorageConfig(_Section):
     db_path: Path
 
@@ -172,6 +179,7 @@ class Config(_Section):
     react: ReactConfig
     questions: QuestionsConfig
     prompts: PromptsConfig
+    memory: MemoryConfig
     storage: StorageConfig
     policy: PolicyConfig
     files: FilesConfig
