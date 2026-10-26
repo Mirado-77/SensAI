@@ -15,8 +15,6 @@ Event payloads (all events also carry `run_id`):
 
 - run.started: session_id, model, prompt_version (A4: `<name>@<sha>` or None)
 - prompt.examples: examples (A7: ids of the few-shot examples sent before the conversation)
-
-`recall` (M3) adds the project memory closest to the message as a system message, not saved.
 - model.chunk: text
 - model.tool_call: call_id, name, args
 - model.usage: prompt_tokens, completion_tokens
@@ -34,6 +32,8 @@ Event payloads (all events also carry `run_id`):
 - run.completed: session_id, steps, tool_calls
 - run.cancelled: session_id, partial
 - run.failed: session_id, error_type, error
+
+`recall` (M3) adds the project memory closest to the message as a system message, not saved.
 """
 
 import asyncio
