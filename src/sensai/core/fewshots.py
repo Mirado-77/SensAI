@@ -48,8 +48,8 @@ class FewShots:
     def select(self, text: str) -> list[Example]:
         """The `k` examples sharing the most words with `text`, best first; ties keep file order.
         shortcut: word overlap, not meaning; switch to the R1 embeddings if it picks badly."""
-        words = _words(text)
-        scored = [(len(words & _words(example.question)), example) for example in self.examples]
+        words = keywords(text)
+        scored = [(len(words & keywords(example.question)), example) for example in self.examples]
         ranked = sorted((pair for pair in scored if pair[0]), key=lambda pair: -pair[0])
         return [example for _, example in ranked[: self.k]]
 
@@ -79,6 +79,7 @@ def _load(path: Path) -> Example:
         raise ConfigError(f"Exemple invalide ({path.name}) : {details}") from exc
 
 
-def _words(text: str) -> set[str]:
+def keywords(text: str) -> set[str]:
+    """Lowercase words without accents, long enough to carry meaning (A7 few-shots, M3 recall)."""
     plain = unicodedata.normalize("NFKD", text.lower()).encode("ascii", "ignore").decode()
     return {word for word in re.findall(r"[a-z0-9_]+", plain) if len(word) >= MIN_WORD}
