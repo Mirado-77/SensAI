@@ -47,6 +47,7 @@ sensai> Phil
 | `/fork <n>` | continue in a new session from message `n` of `/history`; the original session is kept |
 | `/profile` | show your profile; `/profile instructions <text>`, `/profile set <key> <value>`, `/profile unset <key>`, `/profile clear` edit it |
 | `/memory` | list the project memory (M3); `/memory forget <id>` deletes one record |
+| `/persona` | list the personas, `*` marks the active one; `/persona reviewer` switches for the next turns, in the same session (A5) |
 | `/exit`, `/quit`, `Ctrl-D` or `Ctrl-C` at the prompt | quit |
 
 The profile (custom instructions and preferences, e.g. `/profile set language Python`) is saved in
@@ -63,6 +64,7 @@ Options of `sensai chat` (also accepted by `sensai ask`):
 | `--model NAME` | Ollama model to use, overriding the configuration |
 | `--config FILE` | TOML file that overrides `configs/default.toml`; it only lists the keys to change |
 | `--resume [ID]` | `chat` only: continue a saved session, the most recent one without `ID` |
+| `--persona NAME` | `chat` only: persona to start with, overriding `[prompts] persona` |
 
 ### Codebase search: `sensai index`
 
@@ -137,6 +139,28 @@ sensai chat --prompt v1         # roll back for this chat
 In the chat, `/prompt` shows the active version and `/prompt v1` switches to it for the next
 turns, without losing the history. Each run records `<version>@<sha>`, so an edited file shows
 up as a new line in `stats`.
+
+### Personas: `/persona`
+
+A persona is a TOML file of `configs/personas/`: a `description`, a `prompt` added after the base
+prompt (and before the profile), and `risks`, the tool risk levels it may use. Two are shipped:
+
+| Persona | Tools | Role |
+|---|---|---|
+| `dev` (default) | read, write, exec | finds the cause, edits the files, runs the tests |
+| `reviewer` | read | reviews the code and the changes of the conversation, edits nothing |
+
+```text
+you> /persona reviewer
+Persona: reviewer [read]: Reviewer: reads the code and the recent changes, reports problems, edits nothing.
+you> review the fix you just made
+```
+
+The switch keeps the session and its history, so the reviewer sees what the developer did. The
+tools of a risk level the persona lacks are not offered to the model, and a call to one of them
+is refused (`tool.failed` with `not allowed`). `[prompts] persona` or `sensai chat --persona`
+picks the persona at start, `""` uses none; each run records it in `run.started`. A new persona
+is a new file, no code change.
 
 ### Answer quality: `make eval-quality`
 
@@ -371,6 +395,7 @@ file, one migration per pull request. Migrations are applied when the database i
 | R2 | Advanced RAG: keyword + vector fusion, relevance cut (`min_score`), reranking, `path` filter, character budget per result (`max_chars`) | done ([user stories](docs/user-stories/R2.md)) |
 | EV1 | Offline LLM judge: question corpus in `evals/questions/` answered with the active prompt version and `search_code`, each answer graded against a reference (verdict, score, reason), JSON and Markdown report with `make eval-quality` | done ([user stories](docs/user-stories/EV1.md)) |
 | A7 | Few-shot examples: the closest examples of `configs/prompts/examples/` sent before the conversation (`[prompts] examples`), EV1 reports record the variant and `make eval-compare` compares two of them question by question | done ([user stories](docs/user-stories/A7.md)) |
+| A5 | Personas in configuration: `dev` and `reviewer` files in `configs/personas/` (prompt and allowed tool risks), `/persona <name>` switches in the chat without losing the history, `--persona` and `[prompts] persona`, persona recorded on every run | done ([user stories](docs/user-stories/A5.md)) |
 | M3 | Project memory in SQLite: facts (convention, decision, fact, entity) and relations driven by the model through five CRUD tools, each change approved, the closest records recalled at every turn, `/memory` in the chat | done ([user stories](docs/user-stories/M3.md)) |
 | EV4 | Attack corpus in `evals/attacks/`: file injection, tool injection, paths outside the roots, secret leak, dangerous command; `make eval` writes a JSON and a Markdown report in `evals/reports/` | done ([user stories](docs/user-stories/EV4.md)) |
 | EV2 | Guards: user messages and tool outputs refused when they try to override the instructions, `.env` values and common key formats redacted from tool outputs and answers, `[guards]` config | done ([user stories](docs/user-stories/EV2.md)) |
