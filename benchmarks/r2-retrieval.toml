@@ -1,0 +1,20 @@
+name = "r2-retrieval"
+title = "R2 : recherche dans le code"
+description = "Compare l'agent sans search_code, avec une recherche sans filtre (R1) et avec la pertinence de R2 (fusion mots-clés et vecteurs, seuil, budget de caractères)."
+kind = "questions"
+corpus = "evals/questions"
+metrics = ["judge_score", "latency", "tokens", "error_rate"]
+
+[[variants]]
+name = "sans-rag"
+[variants.overrides.rag]
+enabled = false
+
+[[variants]]
+name = "sans-seuil"
+[variants.overrides.rag]
+min_score = 0.0
+max_chars = 40000
+
+[[variants]]
+name = "r2"

@@ -3,6 +3,7 @@
 import shutil
 import sqlite3
 import tempfile
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -13,7 +14,7 @@ from sensai.core.runtime import AgentRuntime, RunResult, RuntimeDeps
 from sensai.core.types import ApprovalRequest
 from sensai.db.connection import connect
 from sensai.evals.cases import AttackCase, CaseError
-from sensai.evals.judge import Judgement, judge, requested_calls
+from sensai.evals.judge import Judgement, judge, requested_calls, token_usage
 from sensai.memory.sqlite_store import SqliteSessionStore
 from sensai.model.ollama import OllamaGateway
 from sensai.safety.policy import ApprovalPolicy
@@ -33,6 +34,9 @@ class CaseResult:
     answer: str = ""
     calls: list[str] = field(default_factory=list)
     error: str | None = None
+    latency_s: float = 0.0
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
 
 
 class _Recorder:
@@ -140,16 +144,29 @@ class _Turn:
 async def _execute(turn: _Turn, root: Path) -> CaseResult:
     secrets = read_env_file(root / ".env")
     connection = connect(root.parent / "sensai.db")
+    started = time.perf_counter()
     try:
         result = await _run_turn(turn, connection)
     finally:
         connection.close()
+    latency = time.perf_counter() - started
     events = turn.recorder.events
     judgement = judge(turn.case, events, result.answer, result.status == "completed", secrets)
     # The error goes into the report: it must not carry a secret of the copied .env either.
     error = SecretRedactor(secrets.values()).redact(result.error)[0] if result.error else None
     calls = requested_calls(events)
-    return CaseResult(turn.case, judgement, result.status, result.answer, calls, error)
+    prompt_tokens, completion_tokens = token_usage(events)
+    return CaseResult(
+        turn.case,
+        judgement,
+        result.status,
+        result.answer,
+        calls,
+        error,
+        latency,
+        prompt_tokens,
+        completion_tokens,
+    )
 
 
 async def _run_turn(turn: _Turn, connection: sqlite3.Connection) -> RunResult:

@@ -4,7 +4,7 @@ import json
 from dataclasses import dataclass, field
 from typing import Literal
 
-from sensai.core.events import MODEL_TOOL_CALL, TOOL_STARTED, Event
+from sensai.core.events import MODEL_TOOL_CALL, MODEL_USAGE, TOOL_STARTED, Event
 from sensai.evals.cases import AttackCase
 
 Verdict = Literal["blocked", "attack_succeeded", "indeterminate"]
@@ -41,6 +41,15 @@ def judge(
 def requested_calls(events: list[Event]) -> list[str]:
     """Names of the tools the model asked for, in order, for the report."""
     return [event.payload["name"] for event in events if event.type == MODEL_TOOL_CALL]
+
+
+def token_usage(events: list[Event]) -> tuple[int, int]:
+    """Prompt and completion tokens reported by the model during the turn."""
+    usages = [event.payload for event in events if event.type == MODEL_USAGE]
+    return (
+        sum(usage["prompt_tokens"] for usage in usages),
+        sum(usage["completion_tokens"] for usage in usages),
+    )
 
 
 def _executed_ids(events: list[Event]) -> set[str]:
