@@ -12,6 +12,7 @@ from rich.text import Text
 from sensai.cli.channel import CliUserChannel
 from sensai.cli.fork import FORK_COMMAND, HISTORY_COMMAND, print_history, run_fork_command
 from sensai.cli.memory import MEMORY_COMMAND, run_memory_command
+from sensai.cli.personas import PERSONA_COMMAND, run_persona_command
 from sensai.cli.profile import (
     PROFILE_COMMAND,
     PROFILE_ID,
@@ -27,6 +28,7 @@ from sensai.core.config import Config
 from sensai.core.contracts import ModelGateway, Tool
 from sensai.core.errors import ConfigError, SensaiError
 from sensai.core.fewshots import fewshots_from
+from sensai.core.personas import load_persona
 from sensai.core.prompts import load_version
 from sensai.core.runtime import AgentRuntime, RunResult, RuntimeDeps
 from sensai.db.connection import connect
@@ -105,7 +107,9 @@ async def chat_loop(
         if text in EXIT_COMMANDS:
             return
         if text == TOOLS_COMMAND:
-            print_tools(terminal, registry)
+            print_tools(
+                terminal, registry, prompt.persona.risks if prompt and prompt.persona else None
+            )
         elif text.split(" ", 1)[0] == PROFILE_COMMAND:
             prompt = prompt or ChatPrompt(None)
             prompt.profile = run_profile_command(store, terminal, text)
@@ -113,6 +117,10 @@ async def chat_loop(
         elif text.split(" ", 1)[0] == PROMPT_COMMAND:
             prompt = prompt or ChatPrompt(None)
             run_prompt_command(prompt, terminal, text)
+            prompt.apply(runtime)
+        elif text.split(" ", 1)[0] == PERSONA_COMMAND:
+            prompt = prompt or ChatPrompt(None)
+            run_persona_command(prompt, terminal, text)
             prompt.apply(runtime)
         elif text.split(" ", 1)[0] == MEMORY_COMMAND:
             run_memory_command(facts, terminal, text)
@@ -124,9 +132,12 @@ async def chat_loop(
             await run_interruptible(runtime.run_turn(session_id, text))
 
 
-def print_tools(terminal: Terminal, registry: ToolRegistry | None) -> None:
-    """List the tools the model can call, with their risk level (T1)."""
+def print_tools(
+    terminal: Terminal, registry: ToolRegistry | None, risks: frozenset[str] | None = None
+) -> None:
+    """List the tools the model can call, with their risk level (T1), limited to `risks` (A5)."""
     tools = registry.tools() if registry is not None else []
+    tools = [tool for tool in tools if risks is None or tool.risk in risks]
     if not tools:
         terminal.console.print(Text("No tool available.", "dim"))
         return
@@ -150,6 +161,7 @@ async def run_chat(
     """
     try:
         version = load_version(config.prompts.system) if config.prompts.system else None
+        persona = load_persona(config.prompts.persona) if config.prompts.persona else None
         fewshots = fewshots_from(config.prompts.examples)
     except ConfigError as exc:
         terminal.errors.print(Text(f"Erreur : {exc}", style="bold red"))
@@ -173,7 +185,7 @@ async def run_chat(
         async with McpServers(config.mcp) as mcp:
             registry = build_registry(native, mcp, terminal)
             deps = _build_deps(config, terminal, connection, gateway, registry)
-            prompt = ChatPrompt(version, profile_prompt(load_profile(store)))
+            prompt = ChatPrompt(version, profile_prompt(load_profile(store)), persona)
             runtime = AgentRuntime(
                 deps,
                 config.runtime,
@@ -249,9 +261,10 @@ def _banner(config: Config, registry: ToolRegistry, prompt: ChatPrompt) -> str:
     version = prompt.version.label if prompt.version else "none"
     if config.prompts.examples:
         version += f" + {config.prompts.examples} examples"
+    persona = prompt.persona.name if prompt.persona else "none"
     return (
-        f"SENSAI | model: {config.model.name} | prompt: {version} ({PROMPT_COMMAND}) | {tools}"
-        " | /exit or Ctrl-D to quit"
+        f"SENSAI | model: {config.model.name} | prompt: {version} ({PROMPT_COMMAND})"
+        f" | persona: {persona} ({PERSONA_COMMAND}) | {tools} | /exit or Ctrl-D to quit"
     )
 
 
