@@ -13,7 +13,7 @@ from sensai.core.errors import ConfigError, ModelConnectionError, ModelNotFoundE
 from sensai.core.types import ToolContext
 from sensai.db.connection import connect
 from sensai.model.ollama import OllamaEmbedder
-from sensai.rag.index import CodeIndex, IndexReport, chunk_lines
+from sensai.rag.index import CodeIndex, IndexReport, SearchOptions, chunk_lines
 from sensai.tools import search_tools
 from sensai.tools.filesystem.guard import PathGuard
 from sensai.tools.search_code import SearchCodeTool
@@ -77,7 +77,8 @@ def test_chunk_lines_overlap_and_cover_every_line():
 async def test_search_finds_the_relevant_file_and_skips_hidden_and_binary(index, repo):
     report = await indexed(index, repo)
     assert (report.indexed, report.chunks) == (2, 2)
-    hits = await index.search("save to a json file", top_k=5)
+    options = SearchOptions(top_k=5, candidates=20, min_score=0.0)
+    hits = await index.search("save to a json file", options)
     assert [hit.path for hit in hits] == [
         str(repo / "pkg" / "storage.py"),
         str(repo / "pkg" / "stats.py"),

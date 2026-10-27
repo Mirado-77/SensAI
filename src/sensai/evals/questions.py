@@ -55,7 +55,9 @@ async def answer_questions(
 ) -> tuple[list[Answer], str | None, list[str]]:
     """Answer each question in a fresh session, on one read-only copy of `source`. Returns the
     answers, the prompt version label and notes on the setup (index skipped, for instance)."""
-    model = gateway or OllamaGateway(config.model.host, config.model.name, config.model.timeout_s)
+    model = gateway or OllamaGateway(
+        config.model.host, config.model.name, config.model.timeout_s, config.model.think
+    )
     version = load_version(config.prompts.system) if config.prompts.system else None
     fewshots = fewshots_from(config.prompts.examples)
     with tempfile.TemporaryDirectory(prefix="ev1-") as tmp:

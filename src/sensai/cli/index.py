@@ -34,7 +34,14 @@ async def run_index(
     try:
         index = code_index(config, connection)
         if embedder is not None:
-            index = CodeIndex(connection, embedder, config.rag.chunk_lines, config.rag.overlap)
+            index = CodeIndex(
+                connection,
+                embedder,
+                config.rag.chunk_lines,
+                config.rag.overlap,
+                document_prefix=config.rag.document_prefix,
+                query_prefix=config.rag.query_prefix,
+            )
         report = IndexReport()
         for root in roots:
             if not root.is_dir():

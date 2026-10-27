@@ -241,7 +241,7 @@ name = "llama3.2:3b"
 | `[storage]` | `db_path` | sqlite database holding sessions, messages and the event journal |
 | `[policy]` | `read`, `write`, `exec` | Before a tool runs: `allow`, `ask` (user approval) or `deny` |
 | `[sandbox]` | `enabled`, `image`, `cpus`, `memory_mb`, `pids_limit`, `timeout_s`, `max_output_bytes` | `run_command` container: image, limits, maximum time of one command, output kept for the model |
-| `[rag]` | `enabled`, `embed_model`, `chunk_lines`, `overlap`, `top_k` | Codebase search: Ollama embedding model, lines per chunk and lines shared by two chunks, excerpts returned by `search_code` |
+| `[rag]` | `enabled`, `embed_model`, `chunk_lines`, `overlap`, `top_k`, `candidates`, `min_score`, `max_chars`, `document_prefix`, `query_prefix` | Codebase search: Ollama embedding model, lines per chunk and lines shared by two chunks, excerpts returned by `search_code`, candidates kept before the relevance cut, minimum cosine similarity, character budget per result, task prefixes for nomic-embed-text (empty for other models) |
 | `[files]` | `max_read_bytes`, `max_write_bytes`, `max_list_entries`, `max_diff_lines`, `allowed_roots` | Limits of the file tools, lines shown in an approval diff, roots (`path`, `mode` `read` or `write`) the tools may access |
 
 ## How it works
@@ -292,7 +292,7 @@ file, one migration per pull request. Migrations are applied when the database i
 - `src/sensai/mcp_server/`: `sensai-mcp`, our own MCP server.
 - `src/sensai/safety/`: approval policy, untrusted content marking.
 - `src/sensai/memory/`: sqlite `SessionStore`.
-- `src/sensai/rag/`: codebase index: chunks, embeddings, cosine search (R1).
+- `src/sensai/rag/`: codebase index: chunks, embeddings, keyword and cosine search with relevance cut (R1, R2).
 - `src/sensai/observability/`: sqlite event journal.
 - `src/sensai/db/`: connection and migrations.
 - `src/sensai/cli/`: chat loop, console rendering, approval prompt.
@@ -319,6 +319,7 @@ file, one migration per pull request. Migrations are applied when the database i
 | A3 | Diff shown before any file write: `write_file` and `edit_file` build a unified diff the user approves or refuses, any tool can provide its own preview | done ([user stories](docs/user-stories/A3.md)) |
 | T2 | Commands in a Docker sandbox: `run_command` chosen by the model, non-root, no network, read-only mount, CPU/memory/process limits, timeout and Ctrl-C kill the container, truncated output, clear fallback without Docker | done ([user stories](docs/user-stories/T2.md)) |
 | R1 | Codebase search (RAG): `sensai index` embeds chunks of the allowed roots with Ollama, `search_code` returns the closest excerpts with `path:lines`, incremental re-indexing | done ([user stories](docs/user-stories/R1.md)) |
+| R2 | Advanced RAG: keyword + vector fusion, relevance cut (`min_score`), reranking, `path` filter, character budget per result (`max_chars`) | done ([user stories](docs/user-stories/R2.md)) |
 | EV1 | Offline LLM judge: question corpus in `evals/questions/` answered with the active prompt version and `search_code`, each answer graded against a reference (verdict, score, reason), JSON and Markdown report with `make eval-quality` | done ([user stories](docs/user-stories/EV1.md)) |
 | A7 | Few-shot examples: the closest examples of `configs/prompts/examples/` sent before the conversation (`[prompts] examples`), EV1 reports record the variant and `make eval-compare` compares two of them question by question | done ([user stories](docs/user-stories/A7.md)) |
 | EV4 | Attack corpus in `evals/attacks/`: file injection, tool injection, paths outside the roots, secret leak, dangerous command; `make eval` writes a JSON and a Markdown report in `evals/reports/` | done ([user stories](docs/user-stories/EV4.md)) |
