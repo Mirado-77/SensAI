@@ -46,6 +46,7 @@ sensai> Phil
 | `/history` | list the messages of the current branch, numbered; an interrupted answer is marked |
 | `/fork <n>` | continue in a new session from message `n` of `/history`; the original session is kept |
 | `/profile` | show your profile; `/profile instructions <text>`, `/profile set <key> <value>`, `/profile unset <key>`, `/profile clear` edit it |
+| `/memory` | list the project memory (M3); `/memory forget <id>` deletes one record |
 | `/exit`, `/quit`, `Ctrl-D` or `Ctrl-C` at the prompt | quit |
 
 The profile (custom instructions and preferences, e.g. `/profile set language Python`) is saved in
@@ -151,6 +152,28 @@ and every grade.
 make eval-quality ARGS="--prompt v1"                # grade another prompt version
 make eval-quality ARGS="--judge-model qwen3.5:9b"   # judge with another model
 make eval-quality ARGS="--only ev1-champs-task --no-index"
+```
+
+### Project memory
+
+The model keeps a long-term memory of the project in the database, across sessions: conventions
+(how code is written), decisions (what was chosen and why), facts, entities, and relations between
+subjects (`taskman/storage.py` uses `taskman/models.py`). It drives it with five tools:
+`memory_save`, `memory_relate`, `memory_search`, `memory_update` and `memory_delete`. Every change
+is shown and approved like a file write, so a file or a tool output cannot plant a lasting
+instruction on its own.
+
+At every turn the conventions and the `[memory] recall` records closest to the message are sent to
+the model as data, after the system prompt; they are not saved in the session. In the chat,
+`/memory` lists the memory and `/memory forget <id>` deletes a record (the first 8 characters of
+the id are enough).
+
+```text
+you> Retiens qu'on garde le stockage des tâches en JSON, pas de base de données.
+Approval required (write): Ajouter à la mémoire du projet
+[decision] stockage des tâches : JSON, pas de base de données.
+Allow? [y/N] y
+sensai> C'est noté.
 ```
 
 ### Few-shot examples and prompt variants
@@ -322,6 +345,7 @@ file, one migration per pull request. Migrations are applied when the database i
 | R2 | Advanced RAG: keyword + vector fusion, relevance cut (`min_score`), reranking, `path` filter, character budget per result (`max_chars`) | done ([user stories](docs/user-stories/R2.md)) |
 | EV1 | Offline LLM judge: question corpus in `evals/questions/` answered with the active prompt version and `search_code`, each answer graded against a reference (verdict, score, reason), JSON and Markdown report with `make eval-quality` | done ([user stories](docs/user-stories/EV1.md)) |
 | A7 | Few-shot examples: the closest examples of `configs/prompts/examples/` sent before the conversation (`[prompts] examples`), EV1 reports record the variant and `make eval-compare` compares two of them question by question | done ([user stories](docs/user-stories/A7.md)) |
+| M3 | Project memory in SQLite: facts (convention, decision, fact, entity) and relations driven by the model through five CRUD tools, each change approved, the closest records recalled at every turn, `/memory` in the chat | done ([user stories](docs/user-stories/M3.md)) |
 | EV4 | Attack corpus in `evals/attacks/`: file injection, tool injection, paths outside the roots, secret leak, dangerous command; `make eval` writes a JSON and a Markdown report in `evals/reports/` | done ([user stories](docs/user-stories/EV4.md)) |
 | EV2 | Guards: user messages and tool outputs refused when they try to override the instructions, `.env` values and common key formats redacted from tool outputs and answers, `[guards]` config | done ([user stories](docs/user-stories/EV2.md)) |
 | T3 | Web search through a local SearXNG (`make searxng`, no API key, no quota): `web_search` with `allowed_domains` / `blocked_domains`, results marked untrusted, `[web]` config | done ([user stories](docs/user-stories/T3.md)) |
