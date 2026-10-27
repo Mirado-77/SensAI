@@ -125,6 +125,7 @@ async def test_events_share_the_run_id_and_carry_their_payload():
         "session_id": s.session_id,
         "model": "test-model",
         "prompt_version": None,
+        "persona": None,
     }
     assert events_of(s, "model.chunk")[0].payload == {"text": "Hello"}
     assert events_of(s, "model.usage")[0].payload == {"prompt_tokens": 5, "completion_tokens": 2}
