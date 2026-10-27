@@ -161,6 +161,30 @@ tools of a risk level the persona lacks are not offered to the model, and a call
 is refused (`tool.failed` with `not allowed`). `[prompts] persona` or `sensai chat --persona`
 picks the persona at start, `""` uses none; each run records it in `run.started`. A new persona
 is a new file, no code change.
+### Metrics: `sensai stats`
+
+`sensai stats` reads the event journal and shows what the recorded runs cost: runs by status,
+tokens, turn duration and time to first token (average, p50, p95, max, on completed runs), calls,
+errors, refusals and average duration per tool, guard blocks and redactions, and the most recent
+errors.
+
+```text
+$ sensai stats --since 1h
+Runs         3 (completed 2, failed 1)
+Tokens       1784 total, 595 per run (prompt 1165, completion 619)
+Turn         avg 83.5 s, p50 42.5 s, p95 124.4 s, max 124.4 s
+First token  avg 81.2 s, p50 42.1 s, p95 120.2 s, max 120.2 s
+Guards       0 blocked, 0 redacted
+
+Recent errors
+2026-10-25 16:41  run.failed  ModelNotFoundError: Modèle introuvable sur Ollama : 'qwen3.5:9b'
+```
+
+| Option | Effect |
+|---|---|
+| `--since PERIOD` | only the runs started in the last `30m`, `2h`, `1d`... |
+| `--errors N` | number of recent errors to list (default 5) |
+| `--json` | print the same metrics as JSON on stdout |
 
 ### Answer quality: `make eval-quality`
 
@@ -397,6 +421,7 @@ file, one migration per pull request. Migrations are applied when the database i
 | A7 | Few-shot examples: the closest examples of `configs/prompts/examples/` sent before the conversation (`[prompts] examples`), EV1 reports record the variant and `make eval-compare` compares two of them question by question | done ([user stories](docs/user-stories/A7.md)) |
 | A5 | Personas in configuration: `dev` and `reviewer` files in `configs/personas/` (prompt and allowed tool risks), `/persona <name>` switches in the chat without losing the history, `--persona` and `[prompts] persona`, persona recorded on every run | done ([user stories](docs/user-stories/A5.md)) |
 | M3 | Project memory in SQLite: facts (convention, decision, fact, entity) and relations driven by the model through five CRUD tools, each change approved, the closest records recalled at every turn, `/memory` in the chat | done ([user stories](docs/user-stories/M3.md)) |
+| EV3 | Metrics from the event journal: `sensai stats` shows runs by status, tokens, turn duration and time to first token (avg, p50, p95, max), per-tool calls, errors and refusals, guard counts and recent errors, `--since`, `--json` | done ([user stories](docs/user-stories/EV3.md)) |
 | EV4 | Attack corpus in `evals/attacks/`: file injection, tool injection, paths outside the roots, secret leak, dangerous command; `make eval` writes a JSON and a Markdown report in `evals/reports/` | done ([user stories](docs/user-stories/EV4.md)) |
 | EV2 | Guards: user messages and tool outputs refused when they try to override the instructions, `.env` values and common key formats redacted from tool outputs and answers, `[guards]` config | done ([user stories](docs/user-stories/EV2.md)) |
 | T3 | Web search through a local SearXNG (`make searxng`, no API key, no quota): `web_search` with `allowed_domains` / `blocked_domains`, results marked untrusted, `[web]` config | done ([user stories](docs/user-stories/T3.md)) |

@@ -18,10 +18,12 @@ from sensai.cli.chat import LAST_SESSION, _open_database, print_sessions, run_ch
 from sensai.cli.index import run_index
 from sensai.cli.prompts import print_prompt_diff, print_prompt_stats, print_prompt_versions
 from sensai.cli.schedule import run_schedule
+from sensai.cli.stats import parse_period, print_stats, since_timestamp
 from sensai.cli.terminal import Terminal
 from sensai.core.config import Config, load_config
 from sensai.core.errors import ConfigError
 from sensai.observability.prompt_stats import prompt_stats
+from sensai.observability.stats import run_stats
 
 with contextlib.suppress(ImportError):
     import readline  # noqa: F401  (line editing and history for input())
@@ -64,6 +66,15 @@ def build_parser() -> argparse.ArgumentParser:
     index.add_argument("paths", nargs="*", help="folders to index (default: the allowed roots)")
     schedule = commands.add_parser("schedule", help="run the scheduled tasks until Ctrl-C (X5)")
     _add_common_options(schedule)
+    stats = commands.add_parser("stats", help="runs, tokens, latency, tools and errors (EV3)")
+    _add_common_options(stats)
+    stats.add_argument(
+        "--since", type=parse_period, metavar="PERIOD", help="only the last 30m, 2h, 1d..."
+    )
+    stats.add_argument(
+        "--errors", type=int, default=5, metavar="N", help="recent errors to show (default 5)"
+    )
+    stats.add_argument("--json", action="store_true", help="print the metrics as JSON")
     return parser
 
 
@@ -105,7 +116,20 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _run(run_schedule(config, terminal), terminal)
     if args.command == "prompts":
         return _prompts(args, config, terminal)
+    if args.command == "stats":
+        return _stats(args, config, terminal)
     return _run(run_chat(config, terminal, resume=args.resume), terminal)
+
+
+def _stats(args: argparse.Namespace, config: Config, terminal: Terminal) -> int:
+    connection = _open_database(config, terminal)
+    if connection is None:
+        return 2
+    try:
+        stats = run_stats(connection, since_timestamp(args.since), max(args.errors, 0))
+        return print_stats(stats, terminal, args.json)
+    finally:
+        connection.close()
 
 
 def _prompts(args: argparse.Namespace, config: Config, terminal: Terminal) -> int:
