@@ -58,9 +58,11 @@ def diff_versions(old: PromptVersion, new: PromptVersion) -> str:
     return "\n".join(lines)
 
 
-def system_prompt(version: PromptVersion | None, profile: str | None) -> str | None:
-    """The base prompt followed by the profile (M1), or None when both are empty."""
-    parts = [part for part in (version.text if version else None, profile) if part]
+def system_prompt(
+    version: PromptVersion | None, profile: str | None, persona: str | None = None
+) -> str | None:
+    """The base prompt, then the persona (A5), then the profile (M1); None when all are empty."""
+    parts = [part for part in (version.text if version else None, persona, profile) if part]
     return "\n\n".join(parts) or None
 
 

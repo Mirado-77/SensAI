@@ -38,6 +38,9 @@ system = "v2"
 # Few-shot examples (A7): at each turn, the `examples` files of configs/prompts/examples closest to
 # the message are sent before the conversation. 0 sends none; compare variants with EV1 first.
 examples = 0
+# Persona (A5): a file of configs/personas (without .toml) added after the base prompt; `risks`
+# there limits the tools it may use. `/persona <name>` switches in the chat. "" uses none.
+persona = "dev"
 
 [memory]
 # Project memory (M3): the model saves conventions, decisions, facts and relations in the

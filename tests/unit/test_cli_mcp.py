@@ -25,7 +25,7 @@ def chat_setup(tmp_path, *lines, **overrides):
     # T3 is off so that no test depends on a SearXNG instance; test_web_search covers it.
     web = {"enabled": False}
     # X5 is off so that the tool list stays the one of each test; test_schedule covers it.
-    prompts = {"system": ""}
+    prompts = {"system": "", "persona": ""}
     scheduler = {"enabled": False}
     # M3 is off for the same reason; test_memory covers it.
     memory = {"enabled": False}

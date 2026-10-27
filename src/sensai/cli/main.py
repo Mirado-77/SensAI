@@ -44,6 +44,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="continue a saved session (the most recent one without ID; an id prefix is enough)",
     )
     chat.add_argument("--prompt", metavar="NAME", help="system prompt version (e.g. v1)")
+    chat.add_argument("--persona", metavar="NAME", help="persona to start with (e.g. reviewer)")
     sessions = commands.add_parser("sessions", help="list the saved sessions")
     _add_common_options(sessions)
     ask = commands.add_parser(
@@ -84,8 +85,16 @@ def _add_common_options(parser: argparse.ArgumentParser) -> None:
 
 def config_from_args(args: argparse.Namespace) -> Config:
     overrides: dict[str, Any] = {"model": {"name": args.model}} if args.model else {}
-    if getattr(args, "prompt", None) is not None:
-        overrides["prompts"] = {"system": args.prompt}
+    prompts = {
+        key: value
+        for key, value in (
+            ("system", getattr(args, "prompt", None)),
+            ("persona", getattr(args, "persona", None)),
+        )
+        if value is not None
+    }
+    if prompts:
+        overrides["prompts"] = prompts
     return load_config(args.config, overrides or None)
 
 
