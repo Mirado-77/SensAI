@@ -4,6 +4,7 @@ real runtime (active prompt version, search_code when the copy can be indexed), 
 import shutil
 import sqlite3
 import tempfile
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -17,7 +18,7 @@ from sensai.core.events import PROMPT_EXAMPLES
 from sensai.core.fewshots import FewShots, fewshots_from
 from sensai.core.prompts import PromptVersion, load_version
 from sensai.db.connection import connect
-from sensai.evals.judge import requested_calls
+from sensai.evals.judge import requested_calls, token_usage
 from sensai.evals.runner import DEMO_REPO, IGNORED, _Recorder, build_runtime
 from sensai.memory.sqlite_store import SqliteSessionStore
 from sensai.model.ollama import OllamaGateway
@@ -43,6 +44,9 @@ class Answer:
     calls: list[str] = field(default_factory=list)
     error: str | None = None
     examples: list[str] = field(default_factory=list)
+    latency_s: float = 0.0
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
 
 
 async def answer_questions(
@@ -124,9 +128,20 @@ async def _answer(
     runtime.system_prompt = version.text if version else None
     runtime.prompt_version = version.label if version else None
     runtime.fewshots = fewshots
+    started = time.perf_counter()
     result = await runtime.run_turn(store.create_session(), case.question)
+    latency = time.perf_counter() - started
     events = recorder.events
     examples = [id_ for e in events if e.type == PROMPT_EXAMPLES for id_ in e.payload["examples"]]
+    prompt_tokens, completion_tokens = token_usage(events)
     return Answer(
-        case, result.status, result.answer, requested_calls(events), result.error, examples
+        case,
+        result.status,
+        result.answer,
+        requested_calls(events),
+        result.error,
+        examples,
+        latency,
+        prompt_tokens,
+        completion_tokens,
     )

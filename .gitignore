@@ -9,3 +9,4 @@ dist/
 *.db
 .sensai/
 evals/reports/
+configs/my_config.toml
