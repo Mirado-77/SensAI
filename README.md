@@ -193,6 +193,30 @@ make eval-compare ARGS="evals/reports/ev1-A.json evals/reports/ev1-B.json"
 `make eval-compare` prints the variants, the mean score and each question side by side, with the
 difference of B against A.
 
+### Benchmarks: `make bench`
+
+A benchmark is one TOML file of `benchmarks/`: a corpus (`evals/questions` or `evals/attacks`),
+the variants to compare (config overrides) and the metrics. The runner plays the corpus once per
+variant and writes, in `docs/benchmarks/`, a Markdown report, a JSON file and a PNG chart.
+
+```bash
+make bench ARGS="--list"                       # benchmarks available
+make bench ARGS="r2-retrieval"                 # no search_code vs no relevance cut vs R2
+make bench ARGS="ev4-guards --no-plot"         # attacks with the EV2 guards off, then on
+make bench ARGS="r2-retrieval --only ev1-champs-task --judge-model qwen3.5:9b"
+```
+
+Metrics: `latency`, `tokens`, `error_rate` for every kind, `judge_score` (questions, graded by the
+EV1 judge) and `block_rate` (attacks, from the EV4 judgement). To benchmark another feature, copy a
+file of `benchmarks/` and change the variants:
+
+```toml
+[[variants]]
+name = "no-threshold"
+[variants.overrides.rag]
+min_score = 0.0
+```
+
 ### Tools from MCP servers
 
 The model can call tools served over MCP (stdio). Declare servers in a `--config` file:
@@ -317,6 +341,8 @@ file, one migration per pull request. Migrations are applied when the database i
 - `src/sensai/memory/`: sqlite `SessionStore`.
 - `src/sensai/rag/`: codebase index: chunks, embeddings, keyword and cosine search with relevance cut (R1, R2).
 - `src/sensai/observability/`: sqlite event journal.
+- `src/sensai/evals/`: EV1 judge, EV4 attack corpus runner and reports.
+- `src/sensai/benchmarks/`: generic benchmark runner built on `evals/` (`benchmarks/*.toml`, reports in `docs/benchmarks/`).
 - `src/sensai/db/`: connection and migrations.
 - `src/sensai/cli/`: chat loop, console rendering, approval prompt.
 - `configs/`: TOML configuration (`default.toml`, profiles, personas, policies) and example JSON Schemas (`schemas/`).
