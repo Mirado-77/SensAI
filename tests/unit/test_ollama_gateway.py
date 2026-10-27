@@ -69,8 +69,16 @@ async def test_sends_model_messages_and_stream_flag(router, gateway, ollama_line
     assert sent_body(route) == {
         "model": "test-model",
         "stream": True,
+        "think": False,
         "messages": [{"role": "user", "content": "Hello"}],
     }
+
+
+async def test_thinking_can_be_enabled_per_gateway(router, ollama_host, ollama_lines):
+    route = reply(router, *ollama_lines([]))
+    gateway = OllamaGateway(ollama_host, "test-model", timeout_s=5, think=True)
+    await collect(gateway)
+    assert sent_body(route)["think"] is True
 
 
 async def test_sends_tool_calls_and_tool_results(router, gateway, ollama_lines):

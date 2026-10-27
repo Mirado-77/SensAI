@@ -275,7 +275,7 @@ def _build_deps(
 ) -> RuntimeDeps:
     model = config.model
     return RuntimeDeps(
-        gateway=gateway or OllamaGateway(model.host, model.name, model.timeout_s),
+        gateway=gateway or OllamaGateway(model.host, model.name, model.timeout_s, model.think),
         store=SqliteSessionStore(connection),
         sink=EventBus([SqliteEventJournal(connection), ConsoleRenderer(terminal)]),
         channel=CliUserChannel(terminal),

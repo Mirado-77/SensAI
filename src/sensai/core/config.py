@@ -31,6 +31,7 @@ class ModelConfig(_Section):
     name: str = Field(min_length=1)
     host: str = Field(min_length=1)
     timeout_s: float = Field(gt=0)
+    think: bool = False  # hidden reasoning of thinking models; off, it would eat the answer budget
 
 
 class RuntimeConfig(_Section):
@@ -132,6 +133,12 @@ class RagConfig(_Section):
     chunk_lines: int = Field(gt=0)
     overlap: int = Field(ge=0)
     top_k: int = Field(gt=0, le=20)
+    candidates: int = Field(default=20, ge=1, le=200)
+    min_score: float = Field(default=0.55, ge=0.0, le=1.0)
+    max_chars: int = Field(default=4000, ge=1)
+    # Task prefixes added before embedding (nomic-embed-text uses search_document / search_query).
+    document_prefix: str = ""
+    query_prefix: str = ""
 
     @model_validator(mode="after")
     def _overlap_below_chunk(self) -> "RagConfig":

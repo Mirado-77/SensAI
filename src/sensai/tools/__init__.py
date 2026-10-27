@@ -33,7 +33,14 @@ def native_tools(config: Config) -> list[Tool]:
 def code_index(config: Config, connection: sqlite3.Connection) -> CodeIndex:
     rag, model = config.rag, config.model
     embedder = OllamaEmbedder(model.host, rag.embed_model, model.timeout_s)
-    return CodeIndex(connection, embedder, rag.chunk_lines, rag.overlap)
+    return CodeIndex(
+        connection,
+        embedder,
+        rag.chunk_lines,
+        rag.overlap,
+        document_prefix=rag.document_prefix,
+        query_prefix=rag.query_prefix,
+    )
 
 
 def search_tools(config: Config, connection: sqlite3.Connection) -> list[Tool]:
@@ -43,7 +50,16 @@ def search_tools(config: Config, connection: sqlite3.Connection) -> list[Tool]:
     index = code_index(config, connection)
     if not index.count():
         return []
-    return [SearchCodeTool(index, PathGuard(config.files.allowed_roots), config.rag.top_k)]
+    rag = config.rag
+    tool = SearchCodeTool(
+        index,
+        PathGuard(config.files.allowed_roots),
+        rag.top_k,
+        candidates=rag.candidates,
+        min_score=rag.min_score,
+        max_chars=rag.max_chars,
+    )
+    return [tool]
 
 
 async def sandbox_tools(config: Config) -> tuple[list[Tool], str | None]:

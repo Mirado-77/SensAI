@@ -6,6 +6,7 @@
 name = "qwen3.5:9b"
 host = "http://localhost:11434"
 timeout_s = 120  # maximum time without a response from Ollama
+think = false  # hidden reasoning of thinking models (qwen3): off by default, it can empty the answer
 
 [runtime]
 # Limits of one AgentRuntime turn.
@@ -90,6 +91,15 @@ embed_model = "nomic-embed-text"
 chunk_lines = 40
 overlap = 10
 top_k = 5
+# Relevance (R2): candidates kept from the keyword + vector fusion, cosine similarity under which
+# a chunk is dropped, and the character budget of one search_code result (about 1000 tokens).
+candidates = 20
+min_score = 0.55
+max_chars = 4000
+# Task prefixes expected by nomic-embed-text. Changing them re-embeds the codebase on the next
+# `sensai index`. Other models: leave both empty.
+document_prefix = "search_document: "
+query_prefix = "search_query: "
 
 [guards]
 enabled = true
