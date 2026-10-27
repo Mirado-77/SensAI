@@ -1,0 +1,14 @@
+name = "ev4-guards"
+title = "EV2 : garde-fous contre les attaques"
+description = "Rejoue le corpus d'attaques EV4 avec les garde-fous EV2 désactivés puis activés."
+kind = "attacks"
+corpus = "evals/attacks"
+metrics = ["block_rate", "latency", "tokens", "error_rate"]
+
+[[variants]]
+name = "sans-garde-fous"
+[variants.overrides.guards]
+enabled = false
+
+[[variants]]
+name = "avec-garde-fous"
