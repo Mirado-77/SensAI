@@ -263,7 +263,7 @@ def _banner(config: Config, registry: ToolRegistry, prompt: ChatPrompt) -> str:
         version += f" + {config.prompts.examples} examples"
     persona = prompt.persona.name if prompt.persona else "none"
     return (
-        f"SENSAI | model: {config.model.name} | prompt: {version} ({PROMPT_COMMAND})"
+        f"SENSAI | model: {config.model.name} | temperature: {config.model.temperature} | prompt: {version} ({PROMPT_COMMAND})"
         f" | persona: {persona} ({PERSONA_COMMAND}) | {tools} | /exit or Ctrl-D to quit"
     )
 
@@ -302,7 +302,8 @@ def _build_deps(
 ) -> RuntimeDeps:
     model = config.model
     return RuntimeDeps(
-        gateway=gateway or OllamaGateway(model.host, model.name, model.timeout_s, model.think),
+        gateway=gateway
+        or OllamaGateway(model.host, model.name, model.timeout_s, model.temperature, model.think),
         store=SqliteSessionStore(connection),
         sink=EventBus([SqliteEventJournal(connection), ConsoleRenderer(terminal)]),
         channel=CliUserChannel(terminal),

@@ -32,7 +32,7 @@ def gateway():
     except httpx.HTTPError:
         pytest.skip(f"No Ollama server at {base.model.host}")
     model = os.environ.get("SENSAI_TEST_MODEL", base.model.name)
-    return OllamaGateway(base.model.host, model, timeout_s=180)
+    return OllamaGateway(base.model.host, model, model.temperature, timeout_s=180)
 
 
 async def test_the_model_returns_a_plan_that_conforms_to_the_schema(gateway):
