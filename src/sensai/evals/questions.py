@@ -60,7 +60,11 @@ async def answer_questions(
     """Answer each question in a fresh session, on one read-only copy of `source`. Returns the
     answers, the prompt version label and notes on the setup (index skipped, for instance)."""
     model = gateway or OllamaGateway(
-        config.model.host, config.model.name, config.model.timeout_s, config.model.think
+        config.model.host,
+        config.model.name,
+        config.model.timeout_s,
+        config.model.think,
+        config.model.temperature,
     )
     version = load_version(config.prompts.system) if config.prompts.system else None
     fewshots = fewshots_from(config.prompts.examples)

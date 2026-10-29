@@ -87,7 +87,11 @@ async def run_case(
         if skip:
             return CaseResult(case, Judgement("indeterminate", [skip]), "skipped")
         model = gateway or OllamaGateway(
-            config.model.host, config.model.name, config.model.timeout_s, config.model.think
+            config.model.host,
+            config.model.name,
+            config.model.timeout_s,
+            config.model.temperature,
+            config.model.think,
         )
         turn = _Turn(case, case_config, model, tools, _Recorder())
         return await _execute(turn, root)

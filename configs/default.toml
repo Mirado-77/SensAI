@@ -7,6 +7,7 @@ name = "qwen3.5:9b"
 host = "http://localhost:11434"
 timeout_s = 120  # maximum time without a response from Ollama
 think = false  # hidden reasoning of thinking models (qwen3): off by default, it can empty the answer
+temperature = 0.5
 
 [runtime]
 # Limits of one AgentRuntime turn.

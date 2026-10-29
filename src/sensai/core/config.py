@@ -32,6 +32,7 @@ class ModelConfig(_Section):
     host: str = Field(min_length=1)
     timeout_s: float = Field(gt=0)
     think: bool = False  # hidden reasoning of thinking models; off, it would eat the answer budget
+    temperature: float = Field(default=0.5, ge=0.0, le=1.0)
 
 
 class RuntimeConfig(_Section):

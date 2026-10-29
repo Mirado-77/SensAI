@@ -60,7 +60,7 @@ async def run_benchmark(
 
 def _judge_gateway(config: Config, judge_model: str | None) -> ModelGateway:
     model = config.model
-    return OllamaGateway(model.host, judge_model or model.name, model.timeout_s)
+    return OllamaGateway(model.host, judge_model or model.name, model.timeout_s, model.temperature)
 
 
 async def _play(
