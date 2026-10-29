@@ -67,6 +67,8 @@ def test_initial_vocabulary_is_complete():
         "guard.blocked",
         "guard.redacted",
         "prompt.examples",
+        "agents.handoff",
+        "agents.verdict",
         "question.requested",
         "question.answered",
     }

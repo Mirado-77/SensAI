@@ -43,6 +43,14 @@ examples = 0
 # there limits the tools it may use. `/persona <name>` switches in the chat. "" uses none.
 persona = "dev"
 
+[agents]
+# Multi-agent handoff (A2): `/pair <task>` gives the task to the `dev` persona, then hands the
+# result to the `reviewer` persona (read only). Its review becomes a verdict; while it asks for
+# changes, they go back to the developer, at most `max_rounds` times.
+dev = "dev"
+reviewer = "reviewer"
+max_rounds = 2
+
 [memory]
 # Project memory (M3): the model saves conventions, decisions, facts and relations in the
 # database (each change approved by the user). At every turn the conventions and the `recall`
