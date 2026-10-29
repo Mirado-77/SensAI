@@ -22,7 +22,7 @@ def router(ollama_host):
 
 @pytest.fixture
 def gateway(ollama_host):
-    return OllamaGateway(ollama_host, "test-model", timeout_s=5)
+    return OllamaGateway(ollama_host, "test-model", temperature=0.5, timeout_s=5)
 
 
 def reply(router, *lines, status=200):
@@ -70,13 +70,32 @@ async def test_sends_model_messages_and_stream_flag(router, gateway, ollama_line
         "model": "test-model",
         "stream": True,
         "think": False,
+        "options": {"temperature": 0.5},
         "messages": [{"role": "user", "content": "Hello"}],
     }
 
 
+async def test_temperature_is_sent_in_options(router, ollama_host, ollama_lines):
+    route = reply(router, *ollama_lines([]))
+    gateway = OllamaGateway(ollama_host, "test-model", temperature=0.2, timeout_s=5)
+    await collect(gateway)
+    body = sent_body(route)
+    assert body["options"] == {"temperature": 0.2}
+    assert "temperature" not in body
+
+
+async def test_temperature_and_think_keep_their_positions(router, ollama_host, ollama_lines):
+    route = reply(router, *ollama_lines([]))
+    gateway = OllamaGateway(ollama_host, "test-model", 5, 0.2, True)
+    await collect(gateway)
+    body = sent_body(route)
+    assert body["options"] == {"temperature": 0.2}
+    assert body["think"] is True
+
+
 async def test_thinking_can_be_enabled_per_gateway(router, ollama_host, ollama_lines):
     route = reply(router, *ollama_lines([]))
-    gateway = OllamaGateway(ollama_host, "test-model", timeout_s=5, think=True)
+    gateway = OllamaGateway(ollama_host, "test-model", temperature=0.5, timeout_s=5, think=True)
     await collect(gateway)
     assert sent_body(route)["think"] is True
 
@@ -122,7 +141,7 @@ async def test_sends_tools_and_schema(router, gateway, ollama_lines):
 
 async def test_host_with_a_trailing_slash_is_accepted(router, ollama_host, ollama_lines):
     reply(router, *ollama_lines([Chunk("a")]))
-    gateway = OllamaGateway(ollama_host + "/", "test-model", timeout_s=5)
+    gateway = OllamaGateway(ollama_host + "/", "test-model", temperature=0.5, timeout_s=5)
     assert await collect(gateway) == [Chunk("a"), Done()]
 
 

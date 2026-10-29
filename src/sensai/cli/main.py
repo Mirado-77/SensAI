@@ -81,6 +81,7 @@ def build_parser() -> argparse.ArgumentParser:
 def _add_common_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--model", help="Ollama model to use (overrides the configuration)")
     parser.add_argument("--config", type=Path, help="TOML file overriding configs/default.toml")
+    parser.add_argument("--temperature", type=float, help="model temperature (remplace configuration)")
 
 
 def config_from_args(args: argparse.Namespace) -> Config:
@@ -95,6 +96,8 @@ def config_from_args(args: argparse.Namespace) -> Config:
     }
     if prompts:
         overrides["prompts"] = prompts
+    if args.temperature is not None:
+        overrides.setdefault("model", {})["temperature"] = args.temperature
     return load_config(args.config, overrides or None)
 
 

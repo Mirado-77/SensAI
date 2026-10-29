@@ -64,7 +64,7 @@ def make_gateway(
                 route.mock(
                     side_effect=lambda request: httpx.Response(200, content=slow_body(lines)[0])
                 )
-            return OllamaGateway(ollama_host, "test-model", timeout_s=5)
+            return OllamaGateway(ollama_host, "test-model", timeout_s=5, temperature=0.5)
 
         yield make_ollama
 

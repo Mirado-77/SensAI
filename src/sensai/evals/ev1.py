@@ -76,7 +76,9 @@ async def run(
         cases, config, gateway, index=index, progress=progress
     )
     model = config.model
-    judge = judge or OllamaGateway(model.host, judge_model, model.timeout_s, model.think)
+    judge = judge or OllamaGateway(
+        model.host, judge_model, model.timeout_s, model.temperature, model.think
+    )
     results = []
     for number, answer in enumerate(answers, 1):
         progress(f"[{number}/{len(answers)}] {answer.case.id} : note du juge")
