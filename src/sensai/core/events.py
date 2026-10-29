@@ -25,6 +25,8 @@ QUESTION_REQUESTED = "question.requested"
 QUESTION_ANSWERED = "question.answered"
 GUARD_BLOCKED = "guard.blocked"
 GUARD_REDACTED = "guard.redacted"
+MEMORY_COMPRESSED = "memory.compressed"
+MEMORY_BUDGET = "memory.budget"
 
 EVENT_TYPES = frozenset(
     {
@@ -49,15 +51,15 @@ EVENT_TYPES = frozenset(
         QUESTION_ANSWERED,
         GUARD_BLOCKED,
         GUARD_REDACTED,
+        MEMORY_COMPRESSED,
+        MEMORY_BUDGET,
     }
 )
 
-MEMORY_COMPRESSED = "memory.compressed"
 ARTIFACT_PATCHED = "artifact.patched"
 
 RESERVED_EVENT_TYPES = frozenset(
     {
-        MEMORY_COMPRESSED,
         ARTIFACT_PATCHED,
     }
 )

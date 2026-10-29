@@ -36,6 +36,14 @@ max_per_turn = 2
 # A new version is a new file; going back to an older name is the rollback. "" sends none.
 system = "v2"
 
+[memory]
+# Context budget (M2): the context size is shown after each turn. Once it reaches compress_at of
+# [model] num_ctx, the older turns are replaced by a summary (one extra model call) and the last
+# keep_turns turns are kept as they are.
+enabled = true
+compress_at = 0.75
+keep_turns = 2
+
 [storage]
 db_path = "~/.sensai/sensai.db"
 

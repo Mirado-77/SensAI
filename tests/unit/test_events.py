@@ -68,10 +68,11 @@ def test_initial_vocabulary_is_complete():
         "guard.redacted",
         "question.requested",
         "question.answered",
+        "memory.compressed",
+        "memory.budget",
     }
 
     assert RESERVED_EVENT_TYPES == {
-        "memory.compressed",
         "artifact.patched",
     }
     assert ALL_EVENT_TYPES == EVENT_TYPES | RESERVED_EVENT_TYPES

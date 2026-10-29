@@ -65,6 +65,15 @@ class PromptsConfig(_Section):
     system: str = Field(pattern=r"^([A-Za-z0-9_-]+)?$")
 
 
+class MemoryConfig(_Section):
+    """Context budget (M2): old turns are summarized once the context reaches `compress_at` of
+    the model window (`[model] num_ctx`); the last `keep_turns` turns are kept as they are."""
+
+    enabled: bool
+    compress_at: float = Field(gt=0, le=1)
+    keep_turns: int = Field(gt=0)
+
+
 class StorageConfig(_Section):
     db_path: Path
 
@@ -171,6 +180,7 @@ class Config(_Section):
     react: ReactConfig
     questions: QuestionsConfig
     prompts: PromptsConfig
+    memory: MemoryConfig
     storage: StorageConfig
     policy: PolicyConfig
     files: FilesConfig
