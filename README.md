@@ -55,6 +55,13 @@ Every chat is saved. `sensai sessions` lists them (newest first), and `sensai ch
 continues the most recent one; `--resume <id>` continues another, the first characters of the
 id are enough.
 
+After each turn, the token line also shows how full the context window is
+(`context ~2048/8192 (25%)`, an estimate). The window is `[model] num_ctx` and is sent to Ollama.
+Once the context reaches `[memory] compress_at` of the window, the older turns are replaced by a
+summary (one extra model call, announced with `memory> summarized ...`) and the last
+`[memory] keep_turns` turns are kept as they are. The summary is saved as the first message of the
+session; tool outputs are never sent to the summary call.
+
 Options of `sensai chat` (also accepted by `sensai ask`):
 
 | Option | Effect |
