@@ -6,6 +6,7 @@
 name = "qwen3.5:9b"
 host = "http://localhost:11434"
 timeout_s = 120  # maximum time without a response from Ollama
+num_ctx = 8192  # context window sent to Ollama (options.num_ctx); the M2 budget is based on it
 
 [runtime]
 # Limits of one AgentRuntime turn.

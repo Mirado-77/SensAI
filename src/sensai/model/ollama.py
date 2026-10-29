@@ -14,10 +14,11 @@ _CUT_MESSAGE = "La connexion avec Ollama s'est interrompue avant la fin de la rÃ
 
 
 class OllamaGateway:
-    def __init__(self, host: str, model: str, timeout_s: float) -> None:
+    def __init__(self, host: str, model: str, timeout_s: float, num_ctx: int | None = None) -> None:
         self._host = host.rstrip("/")
         self._model = model
         self._timeout = httpx.Timeout(timeout_s)
+        self._num_ctx = num_ctx
 
     async def stream_chat(
         self,
@@ -26,6 +27,8 @@ class OllamaGateway:
         schema: dict[str, Any] | None = None,
     ) -> AsyncIterator[ModelEvent]:
         payload = _build_payload(self._model, messages, tools, schema)
+        if self._num_ctx is not None:
+            payload["options"] = {"num_ctx": self._num_ctx}
         try:
             async with self._open(payload) as response:
                 done = False

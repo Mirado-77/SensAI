@@ -31,6 +31,7 @@ class ModelConfig(_Section):
     name: str = Field(min_length=1)
     host: str = Field(min_length=1)
     timeout_s: float = Field(gt=0)
+    num_ctx: int = Field(gt=0)
 
 
 class RuntimeConfig(_Section):
