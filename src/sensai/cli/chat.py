@@ -199,7 +199,7 @@ async def run_chat(
             runtime.fewshots = fewshots
             runtime.recall = memory_recall(config, connection)
             install_guards(runtime, config.guards, read_env_file(config.guards.env_file))
-            terminal.console.print(Text(_banner(config, registry, prompt), "dim"))
+            terminal.console.print(Text(_banner(config, registry, prompt), "dim"), soft_wrap=True)
             facts = FactStore(connection) if config.memory.enabled else None
             await chat_loop(runtime, session_id, terminal, store, registry, prompt, facts)
         return 0
@@ -263,8 +263,9 @@ def _banner(config: Config, registry: ToolRegistry, prompt: ChatPrompt) -> str:
         version += f" + {config.prompts.examples} examples"
     persona = prompt.persona.name if prompt.persona else "none"
     return (
-        f"SENSAI | model: {config.model.name} | temperature: {config.model.temperature} | prompt: {version} ({PROMPT_COMMAND})"
-        f" | persona: {persona} ({PERSONA_COMMAND}) | {tools} | /exit or Ctrl-D to quit"
+        f"SENSAI | model: {config.model.name} | temperature: {config.model.temperature}"
+        f" | prompt: {version} ({PROMPT_COMMAND}) | persona: {persona} ({PERSONA_COMMAND})"
+        f" | {tools} | /exit or Ctrl-D to quit"
     )
 
 

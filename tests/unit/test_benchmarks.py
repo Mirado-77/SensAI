@@ -152,8 +152,10 @@ async def test_variant_overrides_reach_the_config(tmp_path, config_file, source)
 
     result = await run_benchmark(spec, config_file, gateway=agent, source=source)
 
-    assert result.variants[0].notes == []
-    assert result.variants[1].notes == ["search_code désactivé : [rag] enabled = false"]
+    disabled = "search_code désactivé : [rag] enabled = false"
+    # Variant "a" keeps the RAG on; whether indexing works depends on Ollama, not on the override.
+    assert disabled not in result.variants[0].notes
+    assert result.variants[1].notes == [disabled]
     assert result.judge_model is None
 
 
