@@ -28,6 +28,7 @@ from sensai.core.errors import ConfigError, SensaiError
 from sensai.core.prompts import load_version
 from sensai.core.runtime import AgentRuntime, RunResult, RuntimeDeps
 from sensai.db.connection import connect
+from sensai.memory.budget import install_memory
 from sensai.memory.sqlite_store import SqliteSessionStore
 from sensai.model.ollama import OllamaGateway
 from sensai.observability.journal import SqliteEventJournal
@@ -176,6 +177,7 @@ async def run_chat(
             )
             prompt.apply(runtime)
             install_guards(runtime, config.guards, read_env_file(config.guards.env_file))
+            install_memory(runtime, config.memory, config.model.num_ctx, store, deps.gateway)
             terminal.console.print(Text(_banner(config, registry, prompt), "dim"))
             await chat_loop(runtime, session_id, terminal, store, registry, prompt)
         return 0
