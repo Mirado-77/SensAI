@@ -46,6 +46,8 @@ sensai> Phil
 | `/history` | list the messages of the current branch, numbered; an interrupted answer is marked |
 | `/fork <n>` | continue in a new session from message `n` of `/history`; the original session is kept |
 | `/profile` | show your profile; `/profile instructions <text>`, `/profile set <key> <value>`, `/profile unset <key>`, `/profile clear` edit it |
+| `/memory` | list the project memory (M3); `/memory forget <id>` deletes one record |
+| `/persona` | list the personas, `*` marks the active one; `/persona reviewer` switches for the next turns, in the same session (A5) |
 | `/exit`, `/quit`, `Ctrl-D` or `Ctrl-C` at the prompt | quit |
 
 The profile (custom instructions and preferences, e.g. `/profile set language Python`) is saved in
@@ -62,6 +64,7 @@ Options of `sensai chat` (also accepted by `sensai ask`):
 | `--model NAME` | Ollama model to use, overriding the configuration |
 | `--config FILE` | TOML file that overrides `configs/default.toml`; it only lists the keys to change |
 | `--resume [ID]` | `chat` only: continue a saved session, the most recent one without `ID` |
+| `--persona NAME` | `chat` only: persona to start with, overriding `[prompts] persona` |
 
 ### Codebase search: `sensai index`
 
@@ -137,6 +140,52 @@ In the chat, `/prompt` shows the active version and `/prompt v1` switches to it 
 turns, without losing the history. Each run records `<version>@<sha>`, so an edited file shows
 up as a new line in `stats`.
 
+### Personas: `/persona`
+
+A persona is a TOML file of `configs/personas/`: a `description`, a `prompt` added after the base
+prompt (and before the profile), and `risks`, the tool risk levels it may use. Two are shipped:
+
+| Persona | Tools | Role |
+|---|---|---|
+| `dev` (default) | read, write, exec | finds the cause, edits the files, runs the tests |
+| `reviewer` | read | reviews the code and the changes of the conversation, edits nothing |
+
+```text
+you> /persona reviewer
+Persona: reviewer [read]: Reviewer: reads the code and the recent changes, reports problems, edits nothing.
+you> review the fix you just made
+```
+
+The switch keeps the session and its history, so the reviewer sees what the developer did. The
+tools of a risk level the persona lacks are not offered to the model, and a call to one of them
+is refused (`tool.failed` with `not allowed`). `[prompts] persona` or `sensai chat --persona`
+picks the persona at start, `""` uses none; each run records it in `run.started`. A new persona
+is a new file, no code change.
+### Metrics: `sensai stats`
+
+`sensai stats` reads the event journal and shows what the recorded runs cost: runs by status,
+tokens, turn duration and time to first token (average, p50, p95, max, on completed runs), calls,
+errors, refusals and average duration per tool, guard blocks and redactions, and the most recent
+errors.
+
+```text
+$ sensai stats --since 1h
+Runs         3 (completed 2, failed 1)
+Tokens       1784 total, 595 per run (prompt 1165, completion 619)
+Turn         avg 83.5 s, p50 42.5 s, p95 124.4 s, max 124.4 s
+First token  avg 81.2 s, p50 42.1 s, p95 120.2 s, max 120.2 s
+Guards       0 blocked, 0 redacted
+
+Recent errors
+2026-10-25 16:41  run.failed  ModelNotFoundError: Modèle introuvable sur Ollama : 'qwen3.5:9b'
+```
+
+| Option | Effect |
+|---|---|
+| `--since PERIOD` | only the runs started in the last `30m`, `2h`, `1d`... |
+| `--errors N` | number of recent errors to list (default 5) |
+| `--json` | print the same metrics as JSON on stdout |
+
 ### Answer quality: `make eval-quality`
 
 `make eval-quality` (or `python -m sensai.evals.ev1`) asks every question of `evals/questions/`
@@ -151,6 +200,69 @@ and every grade.
 make eval-quality ARGS="--prompt v1"                # grade another prompt version
 make eval-quality ARGS="--judge-model qwen3.5:9b"   # judge with another model
 make eval-quality ARGS="--only ev1-champs-task --no-index"
+```
+
+### Project memory
+
+The model keeps a long-term memory of the project in the database, across sessions: conventions
+(how code is written), decisions (what was chosen and why), facts, entities, and relations between
+subjects (`taskman/storage.py` uses `taskman/models.py`). It drives it with five tools:
+`memory_save`, `memory_relate`, `memory_search`, `memory_update` and `memory_delete`. Every change
+is shown and approved like a file write, so a file or a tool output cannot plant a lasting
+instruction on its own.
+
+At every turn the conventions and the `[memory] recall` records closest to the message are sent to
+the model as data, after the system prompt; they are not saved in the session. In the chat,
+`/memory` lists the memory and `/memory forget <id>` deletes a record (the first 8 characters of
+the id are enough).
+
+```text
+you> Retiens qu'on garde le stockage des tâches en JSON, pas de base de données.
+Approval required (write): Ajouter à la mémoire du projet
+[decision] stockage des tâches : JSON, pas de base de données.
+Allow? [y/N] y
+sensai> C'est noté.
+```
+
+### Few-shot examples and prompt variants
+
+`configs/prompts/examples/` holds question/answer pairs (one TOML file each, with `id`, `question`
+and `answer`) that show the model the expected style. With `[prompts] examples = N`, each turn
+sends the `N` examples sharing the most words with the message, after the system prompt; an
+example sharing no word is never sent, and examples are never saved in the session. The default
+is 0: measure a variant with EV1 before turning it on.
+
+```bash
+make eval-quality ARGS="--examples 0"    # variant A: no few-shots
+make eval-quality ARGS="--examples 2"    # variant B: two few-shots per question
+make eval-compare ARGS="evals/reports/ev1-A.json evals/reports/ev1-B.json"
+```
+
+`make eval-compare` prints the variants, the mean score and each question side by side, with the
+difference of B against A.
+
+### Benchmarks: `make bench`
+
+A benchmark is one TOML file of `benchmarks/`: a corpus (`evals/questions` or `evals/attacks`),
+the variants to compare (config overrides) and the metrics. The runner plays the corpus once per
+variant and writes, in `docs/benchmarks/`, a Markdown report, a JSON file and a PNG chart.
+
+```bash
+make bench ARGS="--list"                       # benchmarks available
+make bench ARGS="r2-retrieval"                 # no search_code vs no relevance cut vs R2
+make bench ARGS="ev4-guards --no-plot"         # attacks with the EV2 guards off, then on
+make bench ARGS="r2-retrieval --only ev1-champs-task --judge-model qwen3.5:9b"
+```
+
+Metrics: `latency`, `tokens`, `error_rate` for every kind, `judge_score` (questions, graded by the
+EV1 judge) and `block_rate` (attacks, from the EV4 judgement). To benchmark another feature, copy a
+file of `benchmarks/` and change the variants:
+
+```toml
+[[variants]]
+name = "no-threshold"
+[variants.overrides.rag]
+min_score = 0.0
 ```
 
 ### Tools from MCP servers
@@ -224,7 +336,7 @@ name = "llama3.2:3b"
 | `[storage]` | `db_path` | sqlite database holding sessions, messages and the event journal |
 | `[policy]` | `read`, `write`, `exec` | Before a tool runs: `allow`, `ask` (user approval) or `deny` |
 | `[sandbox]` | `enabled`, `image`, `cpus`, `memory_mb`, `pids_limit`, `timeout_s`, `max_output_bytes` | `run_command` container: image, limits, maximum time of one command, output kept for the model |
-| `[rag]` | `enabled`, `embed_model`, `chunk_lines`, `overlap`, `top_k` | Codebase search: Ollama embedding model, lines per chunk and lines shared by two chunks, excerpts returned by `search_code` |
+| `[rag]` | `enabled`, `embed_model`, `chunk_lines`, `overlap`, `top_k`, `candidates`, `min_score`, `max_chars`, `document_prefix`, `query_prefix` | Codebase search: Ollama embedding model, lines per chunk and lines shared by two chunks, excerpts returned by `search_code`, candidates kept before the relevance cut, minimum cosine similarity, character budget per result, task prefixes for nomic-embed-text (empty for other models) |
 | `[files]` | `max_read_bytes`, `max_write_bytes`, `max_list_entries`, `max_diff_lines`, `allowed_roots` | Limits of the file tools, lines shown in an approval diff, roots (`path`, `mode` `read` or `write`) the tools may access |
 
 ## How it works
@@ -261,6 +373,7 @@ CLI -> AgentRuntime -> OllamaGateway -> Ollama
 | `make chat ARGS="..."` | Start the chat |
 | `make eval` | Run the EV4 attack corpus and write its report in `evals/reports/` |
 | `make eval-quality` | Grade the answers to `evals/questions/` with the LLM judge (EV1) |
+| `make eval-compare ARGS="A.json B.json"` | Compare two EV1 reports, variant B against variant A (A7) |
 | `make sandbox-image` | Build the Docker image used by `run_command` |
 
 Database changes go in a new `src/sensai/db/migrations/NNN_<feature-id>_<description>.sql`
@@ -274,8 +387,10 @@ file, one migration per pull request. Migrations are applied when the database i
 - `src/sensai/mcp_server/`: `sensai-mcp`, our own MCP server.
 - `src/sensai/safety/`: approval policy, untrusted content marking.
 - `src/sensai/memory/`: sqlite `SessionStore`.
-- `src/sensai/rag/`: codebase index: chunks, embeddings, cosine search (R1).
+- `src/sensai/rag/`: codebase index: chunks, embeddings, keyword and cosine search with relevance cut (R1, R2).
 - `src/sensai/observability/`: sqlite event journal.
+- `src/sensai/evals/`: EV1 judge, EV4 attack corpus runner and reports.
+- `src/sensai/benchmarks/`: generic benchmark runner built on `evals/` (`benchmarks/*.toml`, reports in `docs/benchmarks/`).
 - `src/sensai/db/`: connection and migrations.
 - `src/sensai/cli/`: chat loop, console rendering, approval prompt.
 - `configs/`: TOML configuration (`default.toml`, profiles, personas, policies) and example JSON Schemas (`schemas/`).
@@ -301,7 +416,12 @@ file, one migration per pull request. Migrations are applied when the database i
 | A3 | Diff shown before any file write: `write_file` and `edit_file` build a unified diff the user approves or refuses, any tool can provide its own preview | done ([user stories](docs/user-stories/A3.md)) |
 | T2 | Commands in a Docker sandbox: `run_command` chosen by the model, non-root, no network, read-only mount, CPU/memory/process limits, timeout and Ctrl-C kill the container, truncated output, clear fallback without Docker | done ([user stories](docs/user-stories/T2.md)) |
 | R1 | Codebase search (RAG): `sensai index` embeds chunks of the allowed roots with Ollama, `search_code` returns the closest excerpts with `path:lines`, incremental re-indexing | done ([user stories](docs/user-stories/R1.md)) |
+| R2 | Advanced RAG: keyword + vector fusion, relevance cut (`min_score`), reranking, `path` filter, character budget per result (`max_chars`) | done ([user stories](docs/user-stories/R2.md)) |
 | EV1 | Offline LLM judge: question corpus in `evals/questions/` answered with the active prompt version and `search_code`, each answer graded against a reference (verdict, score, reason), JSON and Markdown report with `make eval-quality` | done ([user stories](docs/user-stories/EV1.md)) |
+| A7 | Few-shot examples: the closest examples of `configs/prompts/examples/` sent before the conversation (`[prompts] examples`), EV1 reports record the variant and `make eval-compare` compares two of them question by question | done ([user stories](docs/user-stories/A7.md)) |
+| A5 | Personas in configuration: `dev` and `reviewer` files in `configs/personas/` (prompt and allowed tool risks), `/persona <name>` switches in the chat without losing the history, `--persona` and `[prompts] persona`, persona recorded on every run | done ([user stories](docs/user-stories/A5.md)) |
+| M3 | Project memory in SQLite: facts (convention, decision, fact, entity) and relations driven by the model through five CRUD tools, each change approved, the closest records recalled at every turn, `/memory` in the chat | done ([user stories](docs/user-stories/M3.md)) |
+| EV3 | Metrics from the event journal: `sensai stats` shows runs by status, tokens, turn duration and time to first token (avg, p50, p95, max), per-tool calls, errors and refusals, guard counts and recent errors, `--since`, `--json` | done ([user stories](docs/user-stories/EV3.md)) |
 | EV4 | Attack corpus in `evals/attacks/`: file injection, tool injection, paths outside the roots, secret leak, dangerous command; `make eval` writes a JSON and a Markdown report in `evals/reports/` | done ([user stories](docs/user-stories/EV4.md)) |
 | EV2 | Guards: user messages and tool outputs refused when they try to override the instructions, `.env` values and common key formats redacted from tool outputs and answers, `[guards]` config | done ([user stories](docs/user-stories/EV2.md)) |
 | T3 | Web search through a local SearXNG (`make searxng`, no API key, no quota): `web_search` with `allowed_domains` / `blocked_domains`, results marked untrusted, `[web]` config | done ([user stories](docs/user-stories/T3.md)) |

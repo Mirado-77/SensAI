@@ -35,7 +35,9 @@ def config(tmp_path):
 
 @pytest.fixture
 def gateway(config):
-    return OllamaGateway(config.model.host, config.model.name, config.model.timeout_s)
+    return OllamaGateway(
+        config.model.host, config.model.name, config.model.timeout_s, config.model.temperature
+    )
 
 
 async def stream(gateway):
@@ -57,13 +59,15 @@ async def test_streams_a_real_answer(gateway):
 
 
 async def test_a_missing_model_is_reported(config):
-    gateway = OllamaGateway(config.model.host, "does-not-exist:1b", timeout_s=10)
+    gateway = OllamaGateway(
+        config.model.host, "does-not-exist:1b", config.model.temperature, timeout_s=10
+    )
     with pytest.raises(ModelNotFoundError):
         await stream(gateway)
 
 
 async def test_an_unreachable_server_is_reported():
-    gateway = OllamaGateway("http://localhost:9", "any", timeout_s=5)
+    gateway = OllamaGateway("http://localhost:9", "any", config.model.temperature, timeout_s=5)
     with pytest.raises(ModelConnectionError):
         await stream(gateway)
 

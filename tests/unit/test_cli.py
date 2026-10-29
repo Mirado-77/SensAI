@@ -201,16 +201,19 @@ async def test_confirm_refuses_at_end_of_input_and_shows_the_preview():
 
 def chat_setup(tmp_path, *lines, **overrides):
     storage = {"db_path": str(tmp_path / "sensai.db")}
-    # A1 planning, X4 questions and the A4 base prompt are off here so that each script is one
-    # model call with only the user's messages; their own test files turn them on.
+    # A1 planning, X4 questions, the A4 base prompt and the A5 persona are off here so that each
+    # script is one model call with only the user's messages; their own test files turn them on.
     react = {"enabled": False, "max_plan_steps": 5}
     questions = {"enabled": False, "max_per_turn": 2}
-    prompts = {"system": ""}
+    # A test that sets [prompts] keeps the persona off unless it names one.
+    prompts = {"system": "", "persona": "", **overrides.pop("prompts", {})}
     sandbox = {"enabled": False}
     # T3 is off so that no test depends on a SearXNG instance; test_web_search covers it.
     web = {"enabled": False}
     # X5 is off so that the tool list stays the one of each test; test_schedule covers it.
     scheduler = {"enabled": False}
+    # M3 is off for the same reason; test_memory covers it.
+    memory = {"enabled": False}
     defaults = {
         "storage": storage,
         "react": react,
@@ -219,6 +222,7 @@ def chat_setup(tmp_path, *lines, **overrides):
         "sandbox": sandbox,
         "web": web,
         "scheduler": scheduler,
+        "memory": memory,
     }
     config = load_config(overrides={**defaults, **overrides})
     terminal, out, err = make_terminal(scripted(*lines))

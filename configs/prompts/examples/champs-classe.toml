@@ -1,0 +1,6 @@
+id = "champs-classe"
+question = "Quels sont les champs de la classe Invoice et leurs valeurs par défaut ?"
+answer = """D'après `billing/models.py`, `Invoice` est une dataclass avec trois champs :
+- `number` (str), obligatoire ;
+- `amount` (float), `0.0` par défaut ;
+- `paid` (bool), `False` par défaut."""

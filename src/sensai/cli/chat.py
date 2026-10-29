@@ -11,6 +11,8 @@ from rich.text import Text
 
 from sensai.cli.channel import CliUserChannel
 from sensai.cli.fork import FORK_COMMAND, HISTORY_COMMAND, print_history, run_fork_command
+from sensai.cli.memory import MEMORY_COMMAND, run_memory_command
+from sensai.cli.personas import PERSONA_COMMAND, run_persona_command
 from sensai.cli.profile import (
     PROFILE_COMMAND,
     PROFILE_ID,
@@ -25,9 +27,13 @@ from sensai.core.bus import EventBus
 from sensai.core.config import Config
 from sensai.core.contracts import ModelGateway, Tool
 from sensai.core.errors import ConfigError, SensaiError
+from sensai.core.fewshots import fewshots_from
+from sensai.core.personas import load_persona
 from sensai.core.prompts import load_version
 from sensai.core.runtime import AgentRuntime, RunResult, RuntimeDeps
 from sensai.db.connection import connect
+from sensai.memory import memory_recall, memory_tools
+from sensai.memory.facts import FactStore
 from sensai.memory.sqlite_store import SqliteSessionStore
 from sensai.model.ollama import OllamaGateway
 from sensai.observability.journal import SqliteEventJournal
@@ -89,6 +95,7 @@ async def chat_loop(
     store: SqliteSessionStore,
     registry: ToolRegistry | None = None,
     prompt: ChatPrompt | None = None,
+    facts: FactStore | None = None,
 ) -> None:
     """Read lines and run one turn per line, until /exit, Ctrl-D or Ctrl-C at the prompt."""
     while True:
@@ -100,7 +107,9 @@ async def chat_loop(
         if text in EXIT_COMMANDS:
             return
         if text == TOOLS_COMMAND:
-            print_tools(terminal, registry)
+            print_tools(
+                terminal, registry, prompt.persona.risks if prompt and prompt.persona else None
+            )
         elif text.split(" ", 1)[0] == PROFILE_COMMAND:
             prompt = prompt or ChatPrompt(None)
             prompt.profile = run_profile_command(store, terminal, text)
@@ -109,6 +118,12 @@ async def chat_loop(
             prompt = prompt or ChatPrompt(None)
             run_prompt_command(prompt, terminal, text)
             prompt.apply(runtime)
+        elif text.split(" ", 1)[0] == PERSONA_COMMAND:
+            prompt = prompt or ChatPrompt(None)
+            run_persona_command(prompt, terminal, text)
+            prompt.apply(runtime)
+        elif text.split(" ", 1)[0] == MEMORY_COMMAND:
+            run_memory_command(facts, terminal, text)
         elif text == HISTORY_COMMAND:
             print_history(store, terminal, session_id)
         elif text.split(" ", 1)[0] == FORK_COMMAND:
@@ -117,9 +132,12 @@ async def chat_loop(
             await run_interruptible(runtime.run_turn(session_id, text))
 
 
-def print_tools(terminal: Terminal, registry: ToolRegistry | None) -> None:
-    """List the tools the model can call, with their risk level (T1)."""
+def print_tools(
+    terminal: Terminal, registry: ToolRegistry | None, risks: frozenset[str] | None = None
+) -> None:
+    """List the tools the model can call, with their risk level (T1), limited to `risks` (A5)."""
     tools = registry.tools() if registry is not None else []
+    tools = [tool for tool in tools if risks is None or tool.risk in risks]
     if not tools:
         terminal.console.print(Text("No tool available.", "dim"))
         return
@@ -143,6 +161,8 @@ async def run_chat(
     """
     try:
         version = load_version(config.prompts.system) if config.prompts.system else None
+        persona = load_persona(config.prompts.persona) if config.prompts.persona else None
+        fewshots = fewshots_from(config.prompts.examples)
     except ConfigError as exc:
         terminal.errors.print(Text(f"Erreur : {exc}", style="bold red"))
         return 2
@@ -161,10 +181,11 @@ async def run_chat(
         native += search_tools(config, connection)
         native += web_tools(config)
         native += schedule_tools(config, connection)
+        native += memory_tools(config, connection)
         async with McpServers(config.mcp) as mcp:
             registry = build_registry(native, mcp, terminal)
             deps = _build_deps(config, terminal, connection, gateway, registry)
-            prompt = ChatPrompt(version, profile_prompt(load_profile(store)))
+            prompt = ChatPrompt(version, profile_prompt(load_profile(store)), persona)
             runtime = AgentRuntime(
                 deps,
                 config.runtime,
@@ -175,9 +196,12 @@ async def run_chat(
                 questions=config.questions,
             )
             prompt.apply(runtime)
+            runtime.fewshots = fewshots
+            runtime.recall = memory_recall(config, connection)
             install_guards(runtime, config.guards, read_env_file(config.guards.env_file))
             terminal.console.print(Text(_banner(config, registry, prompt), "dim"))
-            await chat_loop(runtime, session_id, terminal, store, registry, prompt)
+            facts = FactStore(connection) if config.memory.enabled else None
+            await chat_loop(runtime, session_id, terminal, store, registry, prompt, facts)
         return 0
     finally:
         connection.close()
@@ -235,9 +259,12 @@ def build_registry(native: list[Tool], mcp: McpServers, terminal: Terminal) -> T
 def _banner(config: Config, registry: ToolRegistry, prompt: ChatPrompt) -> str:
     tools = f"{len(registry)} tools ({TOOLS_COMMAND})" if len(registry) else "no tools"
     version = prompt.version.label if prompt.version else "none"
+    if config.prompts.examples:
+        version += f" + {config.prompts.examples} examples"
+    persona = prompt.persona.name if prompt.persona else "none"
     return (
-        f"SENSAI | model: {config.model.name} | prompt: {version} ({PROMPT_COMMAND}) | {tools}"
-        " | /exit or Ctrl-D to quit"
+        f"SENSAI | model: {config.model.name} | temperature: {config.model.temperature} | prompt: {version} ({PROMPT_COMMAND})"
+        f" | persona: {persona} ({PERSONA_COMMAND}) | {tools} | /exit or Ctrl-D to quit"
     )
 
 
@@ -275,7 +302,8 @@ def _build_deps(
 ) -> RuntimeDeps:
     model = config.model
     return RuntimeDeps(
-        gateway=gateway or OllamaGateway(model.host, model.name, model.timeout_s),
+        gateway=gateway
+        or OllamaGateway(model.host, model.name, model.timeout_s, model.temperature, model.think),
         store=SqliteSessionStore(connection),
         sink=EventBus([SqliteEventJournal(connection), ConsoleRenderer(terminal)]),
         channel=CliUserChannel(terminal),

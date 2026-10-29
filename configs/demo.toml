@@ -1,0 +1,43 @@
+# Keynote demo configuration: only the keys that differ from default.toml.
+# Used by `make demo` and docs/demo/SCENARIO.md. The demo works on demo-work/, a throwaway copy of
+# demo-repo/ made by `make demo-reset`, so that fixing the bug never touches the versioned repo.
+
+[model]
+# On a CPU-only laptop, reading a prompt with all the tools takes minutes before the first token.
+timeout_s = 900
+
+[runtime]
+timeout_s = 3600
+
+# Not in the scenario: their tools would only lengthen every prompt.
+[web]
+enabled = false
+
+[scheduler]
+enabled = false
+
+[storage]
+# Separate database: `make demo-reset` empties it, so `sensai stats` shows only the demo runs.
+db_path = "~/.sensai/demo.db"
+
+[files]
+allowed_roots = [{ path = "demo-work", mode = "write" }]
+
+[guards]
+# The fake secrets of the demo repository, redacted if they ever reach a tool output or an answer.
+env_file = "demo-work/.env"
+
+# Our own MCP server: Python code navigation inside the demo copy (T1).
+[[mcp.servers]]
+name = "code"
+command = "sensai-mcp"
+args = ["--root", "demo-work"]
+risk = "read"
+
+# An existing MCP server: the official filesystem server, limited to the demo copy (T1).
+# Requires Node.js; `make demo-reset` warms the npx cache so that it starts offline.
+[[mcp.servers]]
+name = "fs"
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-filesystem@2026.8.31", "demo-work"]
+risk = "auto"

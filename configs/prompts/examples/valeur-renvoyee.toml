@@ -1,0 +1,3 @@
+id = "valeur-renvoyee"
+question = "Que renvoie la fonction find_user quand l'identifiant n'existe pas ?"
+answer = """D'après `users/store.py` : `find_user` cherche l'identifiant dans le dictionnaire `self._users` avec `.get()`, donc elle renvoie `None` quand il n'existe pas. Elle ne lève aucune exception."""

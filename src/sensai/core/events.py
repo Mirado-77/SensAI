@@ -25,6 +25,7 @@ QUESTION_REQUESTED = "question.requested"
 QUESTION_ANSWERED = "question.answered"
 GUARD_BLOCKED = "guard.blocked"
 GUARD_REDACTED = "guard.redacted"
+PROMPT_EXAMPLES = "prompt.examples"
 
 EVENT_TYPES = frozenset(
     {
@@ -49,6 +50,7 @@ EVENT_TYPES = frozenset(
         QUESTION_ANSWERED,
         GUARD_BLOCKED,
         GUARD_REDACTED,
+        PROMPT_EXAMPLES,
     }
 )
 
