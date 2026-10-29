@@ -70,6 +70,14 @@ class PromptsConfig(_Section):
     persona: str = Field(default="", pattern=r"^([A-Za-z0-9_-]+)?$")
 
 
+class AgentsConfig(_Section):
+    """Multi-agent handoff (A2): `/pair` runs the `dev` persona then the `reviewer` persona."""
+
+    dev: str = Field(pattern=r"^[A-Za-z0-9_-]+$")
+    reviewer: str = Field(pattern=r"^[A-Za-z0-9_-]+$")
+    max_rounds: int = Field(ge=1, le=5)
+
+
 class MemoryConfig(_Section):
     """Project memory (M3): facts saved by the model, `recall` of them sent at each turn."""
 
@@ -190,6 +198,7 @@ class Config(_Section):
     questions: QuestionsConfig
     prompts: PromptsConfig
     memory: MemoryConfig
+    agents: AgentsConfig
     storage: StorageConfig
     policy: PolicyConfig
     files: FilesConfig

@@ -48,6 +48,7 @@ sensai> Phil
 | `/profile` | show your profile; `/profile instructions <text>`, `/profile set <key> <value>`, `/profile unset <key>`, `/profile clear` edit it |
 | `/memory` | list the project memory (M3); `/memory forget <id>` deletes one record |
 | `/persona` | list the personas, `*` marks the active one; `/persona reviewer` switches for the next turns, in the same session (A5) |
+| `/pair <task>` | the `dev` persona does the task, the `reviewer` persona reviews it, and they hand it back and forth until it is approved (A2) |
 | `/exit`, `/quit`, `Ctrl-D` or `Ctrl-C` at the prompt | quit |
 
 The profile (custom instructions and preferences, e.g. `/profile set language Python`) is saved in
@@ -200,6 +201,27 @@ and every grade.
 make eval-quality ARGS="--prompt v1"                # grade another prompt version
 make eval-quality ARGS="--judge-model qwen3.5:9b"   # judge with another model
 make eval-quality ARGS="--only ev1-champs-task --no-index"
+```
+
+### Developer and reviewer agents
+
+`/pair <task>` runs two agents on the same session, one after the other: the `dev` persona does
+the task (it may read, write and run), then the `reviewer` persona reviews the change with read
+access only. A structured call turns the review into a verdict (`approved`, `issues`); while the
+reviewer asks for changes, its issues go back to the developer, at most `[agents] max_rounds`
+times (2 by default). An unreadable verdict never counts as an approval. Every turn stays in the
+session, each handoff and verdict is journaled (`agents.handoff`, `agents.verdict`), and the
+persona you had is back afterwards.
+
+```text
+you> /pair dans taskman/stats.py, completion_rate plante sur une liste vide : renvoie 0.0
+pair> dev
+tool> edit_file(...)
+sensai> J'ai modifié completion_rate pour retourner 0.0 si la liste est vide.
+pair> reviewer
+tool> read_file({"path": "taskman/stats.py"})
+sensai> The change correctly handles the empty list by returning 0.0.
+pair> approuvé par reviewer (tour 1)
 ```
 
 ### Project memory
@@ -421,6 +443,7 @@ file, one migration per pull request. Migrations are applied when the database i
 | A7 | Few-shot examples: the closest examples of `configs/prompts/examples/` sent before the conversation (`[prompts] examples`), EV1 reports record the variant and `make eval-compare` compares two of them question by question | done ([user stories](docs/user-stories/A7.md)) |
 | A5 | Personas in configuration: `dev` and `reviewer` files in `configs/personas/` (prompt and allowed tool risks), `/persona <name>` switches in the chat without losing the history, `--persona` and `[prompts] persona`, persona recorded on every run | done ([user stories](docs/user-stories/A5.md)) |
 | M3 | Project memory in SQLite: facts (convention, decision, fact, entity) and relations driven by the model through five CRUD tools, each change approved, the closest records recalled at every turn, `/memory` in the chat | done ([user stories](docs/user-stories/M3.md)) |
+| A2 | Developer and reviewer agents: `/pair <task>` hands the work from the `dev` persona to the read-only `reviewer` persona and back until a structured verdict approves it (`[agents] max_rounds`), each handoff and verdict journaled | done ([user stories](docs/user-stories/A2.md)) |
 | EV3 | Metrics from the event journal: `sensai stats` shows runs by status, tokens, turn duration and time to first token (avg, p50, p95, max), per-tool calls, errors and refusals, guard counts and recent errors, `--since`, `--json` | done ([user stories](docs/user-stories/EV3.md)) |
 | EV4 | Attack corpus in `evals/attacks/`: file injection, tool injection, paths outside the roots, secret leak, dangerous command; `make eval` writes a JSON and a Markdown report in `evals/reports/` | done ([user stories](docs/user-stories/EV4.md)) |
 | EV2 | Guards: user messages and tool outputs refused when they try to override the instructions, `.env` values and common key formats redacted from tool outputs and answers, `[guards]` config | done ([user stories](docs/user-stories/EV2.md)) |

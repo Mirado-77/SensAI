@@ -12,6 +12,7 @@ from rich.text import Text
 from sensai.cli.channel import CliUserChannel
 from sensai.cli.fork import FORK_COMMAND, HISTORY_COMMAND, print_history, run_fork_command
 from sensai.cli.memory import MEMORY_COMMAND, run_memory_command
+from sensai.cli.pair import PAIR_COMMAND, Pair
 from sensai.cli.personas import PERSONA_COMMAND, run_persona_command
 from sensai.cli.profile import (
     PROFILE_COMMAND,
@@ -96,6 +97,7 @@ async def chat_loop(
     registry: ToolRegistry | None = None,
     prompt: ChatPrompt | None = None,
     facts: FactStore | None = None,
+    pair: Pair | None = None,
 ) -> None:
     """Read lines and run one turn per line, until /exit, Ctrl-D or Ctrl-C at the prompt."""
     while True:
@@ -122,6 +124,9 @@ async def chat_loop(
             prompt = prompt or ChatPrompt(None)
             run_persona_command(prompt, terminal, text)
             prompt.apply(runtime)
+        elif text.split(" ", 1)[0] == PAIR_COMMAND and pair is not None:
+            prompt = prompt or ChatPrompt(None)
+            await pair.run(runtime, prompt, session_id, terminal, text, run_interruptible)
         elif text.split(" ", 1)[0] == MEMORY_COMMAND:
             run_memory_command(facts, terminal, text)
         elif text == HISTORY_COMMAND:
@@ -201,7 +206,8 @@ async def run_chat(
             install_guards(runtime, config.guards, read_env_file(config.guards.env_file))
             terminal.console.print(Text(_banner(config, registry, prompt), "dim"), soft_wrap=True)
             facts = FactStore(connection) if config.memory.enabled else None
-            await chat_loop(runtime, session_id, terminal, store, registry, prompt, facts)
+            pair = Pair(config.agents, deps.gateway, deps.sink, config.structured.max_repairs)
+            await chat_loop(runtime, session_id, terminal, store, registry, prompt, facts, pair)
         return 0
     finally:
         connection.close()
