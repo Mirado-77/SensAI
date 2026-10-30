@@ -207,6 +207,15 @@ class ArtifactConfig(_Section):
     max_section_chars: int = Field(default=5000, ge=2000, le=7000)
 
 
+
+class ExportConfig(_Section):
+    """Export and sharing (X3): where the shared pages are written and the address serving them."""
+
+    shares_dir: Path
+    host: str = "127.0.0.1"
+    port: int = Field(gt=0, le=65535)
+
+
 class Config(_Section):
     model: ModelConfig
     runtime: RuntimeConfig
@@ -227,6 +236,7 @@ class Config(_Section):
     web: WebConfig
     scheduler: SchedulerConfig
     artifact: ArtifactConfig
+    export: ExportConfig
 
 
 def _read_toml(path: Path) -> dict[str, Any]:

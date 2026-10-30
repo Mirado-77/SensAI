@@ -9,6 +9,7 @@ Every call to the model goes through the Ollama HTTP API, with no LLM framework.
 - [Ollama](https://ollama.com), installed locally or started with `make ollama` (requires Docker)
 - At least one model pulled in Ollama, for example `ollama pull gemma4:e2b`
 - Optional: Docker, for the `run_command` tool (T2); build its image with `make sandbox-image`
+- Optional: WeasyPrint, for the PDF export (X3): `.venv/bin/pip install -e '.[pdf]'` (it needs Pango, present on most Linux desktops)
 
 ## Installation
 
@@ -248,6 +249,25 @@ Allow? [y/N] y
 sensai> C'est noté.
 ```
 
+### Export and sharing: `sensai export`, `sensai share`
+
+A session can leave SENSAI in two ways: as a file, or as a link. Both contain the conversation
+(your messages and SENSAI's answers, without the raw tool outputs) and the state document (M4),
+and both go through the EV2 redactor first, so a secret read during the session is replaced.
+
+```bash
+sensai export 1e6f8e5e --format md -o session.md   # also json; stdout without -o
+sensai export 1e6f8e5e --format pdf -o session.pdf # needs WeasyPrint
+sensai share 1e6f8e5e                              # prints http://127.0.0.1:8765/s/<token>
+sensai share --serve                               # serves the shared pages until Ctrl-C
+sensai share --revoke <token>                      # deletes the page, the link stops working
+```
+
+A share is a snapshot: an HTML page saved in `[export] shares_dir` under a random token of about
+128 bits. Anyone who has the link can read it without an account, as with a "Share conversation"
+link; nobody can guess it. The server only answers `/s/<token>`, read-only. It listens on
+`127.0.0.1` by default; set `[export] host = "0.0.0.0"` to open the link from another device on
+the same network.
 ### Semantic cache
 
 The first message of a session is embedded with `[rag] embed_model`. When a question already
@@ -379,6 +399,7 @@ name = "llama3.2:3b"
 | `[react]` | `enabled`, `max_plan_steps` | Bounded ReAct loop: a short structured plan before acting (1 to 10 steps); `enabled = false` turns it off |
 | `[mcp]` | `timeout_s`, `[[mcp.servers]]` | Maximum time of one MCP request; MCP servers: `name`, `command`, `args`, `env`, `cwd`, `enabled`, `risk` (`read`, `write`, `exec` or `auto`) |
 | `[storage]` | `db_path` | sqlite database holding sessions, messages and the event journal |
+| `[export]` | `shares_dir`, `host`, `port` | Shared pages of `sensai share` and the address `sensai share --serve` listens on (X3) |
 | `[policy]` | `read`, `write`, `exec` | Before a tool runs: `allow`, `ask` (user approval) or `deny` |
 | `[sandbox]` | `enabled`, `image`, `cpus`, `memory_mb`, `pids_limit`, `timeout_s`, `max_output_bytes` | `run_command` container: image, limits, maximum time of one command, output kept for the model |
 | `[rag]` | `enabled`, `embed_model`, `chunk_lines`, `overlap`, `top_k`, `candidates`, `min_score`, `max_chars`, `document_prefix`, `query_prefix` | Codebase search: Ollama embedding model, lines per chunk and lines shared by two chunks, excerpts returned by `search_code`, candidates kept before the relevance cut, minimum cosine similarity, character budget per result, task prefixes for nomic-embed-text (empty for other models) |
@@ -455,6 +476,7 @@ file, one migration per pull request. Migrations are applied when the database i
 | X2 | Interruption and fork: `Ctrl-C` stops the answer and keeps the partial text as interrupted, `/history` and `/fork <n>` branch the conversation into a new session | done ([user stories](docs/user-stories/X2.md)) |
 | X4 | Structured questions: when the request is ambiguous the model asks one short question with numbered options, the answer goes back to it and is saved | done ([user stories](docs/user-stories/X4.md)) |
 | X5 | Scheduled tasks: the chat plans a command from the allowed list at a fixed interval (approved once, at creation), `sensai schedule` runs them in the sandbox, `[scheduler]` config | done ([user stories](docs/user-stories/X5.md)) |
+| X3 | Export and sharing: `sensai export` writes a session and its state document as JSON, Markdown or PDF, `sensai share` saves it under a random token and `sensai share --serve` serves it without auth, secrets redacted, `--revoke` | done ([user stories](docs/user-stories/X3.md)) |
 | A1 | Bounded ReAct loop: short structured plan shown before acting, one event per action and observation, bounded by `max_steps` | done ([user stories](docs/user-stories/A1.md)) |
 | T5 | Structured output: JSON validated against a schema with one repair attempt (`sensai ask --schema`), tool arguments validated before any execution | done ([user stories](docs/user-stories/T5.md)) |
 | T4 | File access limited to allowed roots: `read_file`, `list_dir`, `write_file`, `edit_file`, path guard (traversal and symlinks), atomic writes, untrusted content marking | done ([user stories](docs/user-stories/T4.md)) |

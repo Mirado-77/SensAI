@@ -40,3 +40,7 @@ class GuardBlockedError(SensaiError):
         super().__init__(reason)
         self.stage = stage
         self.reason = reason
+
+
+class ExportError(SensaiError):
+    """Session that cannot be exported, or export format not available (X3)."""
