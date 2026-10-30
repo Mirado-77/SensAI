@@ -12,3 +12,4 @@ evals/reports/
 configs/my_config.toml
 # Throwaway copy of demo-repo/ used by the keynote demo (make demo-reset)
 demo-work/
+node_modules/
