@@ -168,10 +168,11 @@ class RagConfig(_Section):
 
 
 class GuardsConfig(_Section):
-    """Input and output guards (EV2): injection check, secret redaction from `env_file`."""
+    """Input and output guards (EV2): injection check, redaction of `env_file` secrets and PII."""
 
     enabled: bool
     env_file: Path
+    pii: bool = True
 
 
 class SchedulerConfig(_Section):

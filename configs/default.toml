@@ -127,6 +127,8 @@ query_prefix = "search_query: "
 enabled = true
 # Values of this file are redacted from tool outputs and answers (KEY=VALUE lines).
 env_file = ".env"
+# Emails and phone numbers are masked as [EMAIL] and [PHONE] in tool outputs and answers.
+pii = true
 
 [web]
 enabled = true
