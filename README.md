@@ -47,6 +47,7 @@ sensai> Phil
 | `/fork <n>` | continue in a new session from message `n` of `/history`; the original session is kept |
 | `/profile` | show your profile; `/profile instructions <text>`, `/profile set <key> <value>`, `/profile unset <key>`, `/profile clear` edit it |
 | `/memory` | list the project memory (M3); `/memory forget <id>` deletes one record |
+| `/doc` | show the state document of the session (M4): goal, decisions, what is done, what is left |
 | `/persona` | list the personas, `*` marks the active one; `/persona reviewer` switches for the next turns, in the same session (A5) |
 | `/pair <task>` | the `dev` persona does the task, the `reviewer` persona reviews it, and they hand it back and forth until it is approved (A2) |
 | `/exit`, `/quit`, `Ctrl-D` or `Ctrl-C` at the prompt | quit |
@@ -443,6 +444,7 @@ file, one migration per pull request. Migrations are applied when the database i
 | A7 | Few-shot examples: the closest examples of `configs/prompts/examples/` sent before the conversation (`[prompts] examples`), EV1 reports record the variant and `make eval-compare` compares two of them question by question | done ([user stories](docs/user-stories/A7.md)) |
 | A5 | Personas in configuration: `dev` and `reviewer` files in `configs/personas/` (prompt and allowed tool risks), `/persona <name>` switches in the chat without losing the history, `--persona` and `[prompts] persona`, persona recorded on every run | done ([user stories](docs/user-stories/A5.md)) |
 | M3 | Project memory in SQLite: facts (convention, decision, fact, entity) and relations driven by the model through five CRUD tools, each change approved, the closest records recalled at every turn, `/memory` in the chat | done ([user stories](docs/user-stories/M3.md)) |
+| M4 | State document of the session: the model patches one section at a time with `artifact_patch` (`append` or `replace`, each change approved and journaled), the document is sent at every turn, `/doc` in the chat, copied on `/fork`, `[artifact]` config | done ([user stories](docs/user-stories/M4.md)) |
 | A2 | Developer and reviewer agents: `/pair <task>` hands the work from the `dev` persona to the read-only `reviewer` persona and back until a structured verdict approves it (`[agents] max_rounds`), each handoff and verdict journaled | done ([user stories](docs/user-stories/A2.md)) |
 | EV3 | Metrics from the event journal: `sensai stats` shows runs by status, tokens, turn duration and time to first token (avg, p50, p95, max), per-tool calls, errors and refusals, guard counts and recent errors, `--since`, `--json` | done ([user stories](docs/user-stories/EV3.md)) |
 | EV4 | Attack corpus in `evals/attacks/`: file injection, tool injection, paths outside the roots, secret leak, dangerous command; `make eval` writes a JSON and a Markdown report in `evals/reports/` | done ([user stories](docs/user-stories/EV4.md)) |

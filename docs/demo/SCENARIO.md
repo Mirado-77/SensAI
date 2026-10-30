@@ -169,14 +169,21 @@ On voit : la persona change sans perdre l'historique ; le reviewer n'a que des o
 
 Revenir avec `/persona dev`.
 
-### Acte 7 : la mémoire et la reprise le lendemain (M3, M1)
+### Acte 7 : la mémoire, le document d'état et la reprise le lendemain (M3, M4, M1)
 
 Taper :
 
 > Retiens comme convention du projet : les docstrings sont écrites en français.
 
 On voit : l'approbation de `memory_save` (une écriture en mémoire est validée comme une écriture
-de fichier) : `y`. Quitter avec `/exit`, puis relancer en reprenant la session :
+de fichier) : `y`.
+
+> Mets à jour le document d'état : ce qui a été corrigé et ce qui reste à faire.
+
+On voit : une ou deux approbations de `artifact_patch`, une par section (`Fait`, `Reste à
+faire`) : `y`. `/doc` affiche le document, section par section (M4).
+
+Quitter avec `/exit`, puis relancer en reprenant la session :
 
 ```bash
 make demo ARGS="--resume"
@@ -184,7 +191,8 @@ make demo ARGS="--resume"
 
 > Où en est-on sur ce projet ? Qu'est-ce qui a été corrigé ?
 
-On voit : SENSAI reprend la dernière session, connaît la correction et rappelle la convention.
+On voit : SENSAI reprend la dernière session, connaît la correction grâce au document d'état et
+rappelle la convention.
 `/memory` liste ce qui a été retenu. Quitter avec `/exit`.
 
 ### Acte 8 : ce que la démo a coûté (EV3, A4)
@@ -231,7 +239,7 @@ et la question du reviewer demande un test ou un cas limite.
 | 4 | T1 |
 | 5 | X2 |
 | 6 | A5 |
-| 7 | M3, M1 |
+| 7 | M3, M4, M1 |
 | 8 | EV3, A4 |
 
 Hors scénario, à montrer seulement s'il reste du temps : X4 (« Améliore le projet. » déclenche
