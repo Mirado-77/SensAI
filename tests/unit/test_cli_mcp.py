@@ -29,6 +29,8 @@ def chat_setup(tmp_path, *lines, **overrides):
     scheduler = {"enabled": False}
     # M3 is off for the same reason; test_memory covers it.
     memory = {"enabled": False}
+    # M4 too; test_artifact covers it.
+    artifact = {"enabled": False}
     defaults = {
         "storage": storage,
         "react": react,
@@ -37,6 +39,7 @@ def chat_setup(tmp_path, *lines, **overrides):
         "prompts": prompts,
         "scheduler": scheduler,
         "memory": memory,
+        "artifact": artifact,
     }
     config = load_config(overrides={**defaults, **overrides})
     out, err = io.StringIO(), io.StringIO()

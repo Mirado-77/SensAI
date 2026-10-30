@@ -36,6 +36,7 @@ Event payloads (all events also carry `run_id`):
 - run.failed: session_id, error_type, error
 
 `recall` (M3) adds the project memory closest to the message as a system message, not saved.
+`artifact_note` (M4) adds the state document of the session to a system message, not saved.
 """
 
 import asyncio
@@ -171,6 +172,7 @@ class AgentRuntime:
         self.tool_risks: frozenset[str] | None = None  # A5: risk levels offered, None = all
         self.fewshots: FewShots | None = None
         self.recall: Callable[[str], str | None] | None = None  # M3 project memory
+        self.artifact_note: Callable[[str], str | None] | None = None  # M4 state document
         self.entry_hooks: list[Hook] = []
         self.exit_hooks: list[Hook] = []
         self.result_hooks: list[ResultHook] = []
@@ -233,6 +235,9 @@ class AgentRuntime:
         memory = self.recall(ctx.user_text) if self.recall else None
         if memory:
             prefix.append(Message("system", memory))
+        artifact_note = self.artifact_note(ctx.session_id) if self.artifact_note else None
+        if artifact_note:
+            prefix.append(Message("system", artifact_note))
         examples = self.fewshots.select(ctx.user_text) if self.fewshots else []
         if examples:
             self._emit(PROMPT_EXAMPLES, ctx.run_id, examples=[example.id for example in examples])

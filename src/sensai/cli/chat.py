@@ -9,6 +9,7 @@ from typing import Any
 
 from rich.text import Text
 
+from sensai.cli.artifact import DOC_COMMAND, StateDocument, print_document
 from sensai.cli.channel import CliUserChannel
 from sensai.cli.fork import FORK_COMMAND, HISTORY_COMMAND, print_history, run_fork_command
 from sensai.cli.memory import CACHE_COMMAND, MEMORY_COMMAND, run_cache_command, run_memory_command
@@ -26,14 +27,15 @@ from sensai.cli.render import ConsoleRenderer
 from sensai.cli.terminal import Terminal
 from sensai.core.bus import EventBus
 from sensai.core.config import Config
-from sensai.core.contracts import ModelGateway, Tool
+from sensai.core.contracts import EventSink, ModelGateway, Tool
 from sensai.core.errors import ConfigError, SensaiError
 from sensai.core.fewshots import fewshots_from
 from sensai.core.personas import load_persona
 from sensai.core.prompts import load_version
 from sensai.core.runtime import AgentRuntime, RunResult, RuntimeDeps
 from sensai.db.connection import connect
-from sensai.memory import memory_recall, memory_tools
+from sensai.memory import artifact_note_for, artifact_tools, memory_recall, memory_tools
+from sensai.memory.artifact import ArtifactStore
 from sensai.memory.cache import SemanticCache, install_cache, semantic_cache
 from sensai.memory.facts import FactStore
 from sensai.memory.sqlite_store import SqliteSessionStore
@@ -99,6 +101,7 @@ async def chat_loop(
     prompt: ChatPrompt | None = None,
     facts: FactStore | None = None,
     pair: Pair | None = None,
+    document: StateDocument | None = None,
     cache: SemanticCache | None = None,
 ) -> None:
     """Read lines and run one turn per line, until /exit, Ctrl-D or Ctrl-C at the prompt."""
@@ -135,8 +138,13 @@ async def chat_loop(
             run_cache_command(cache, terminal, text)
         elif text == HISTORY_COMMAND:
             print_history(store, terminal, session_id)
+        elif text == DOC_COMMAND:
+            print_document(document, terminal, session_id)
         elif text.split(" ", 1)[0] == FORK_COMMAND:
-            session_id = run_fork_command(store, terminal, session_id, text)
+            forked = run_fork_command(store, terminal, session_id, text)
+            if document is not None:
+                document.fork(session_id, forked)
+            session_id = forked
         elif text:
             await run_interruptible(runtime.run_turn(session_id, text))
 
@@ -180,6 +188,7 @@ async def run_chat(
         return 2
     try:
         store = SqliteSessionStore(connection)
+        sink = EventBus([SqliteEventJournal(connection), ConsoleRenderer(terminal)])
         session_id = _open_session(store, terminal, resume)
         if session_id is None:
             return 2
@@ -191,9 +200,10 @@ async def run_chat(
         native += web_tools(config)
         native += schedule_tools(config, connection)
         native += memory_tools(config, connection)
+        native += artifact_tools(config, connection, sink)
         async with McpServers(config.mcp) as mcp:
             registry = build_registry(native, mcp, terminal)
-            deps = _build_deps(config, terminal, connection, gateway, registry)
+            deps = _build_deps(config, terminal, connection, gateway, registry, sink)
             prompt = ChatPrompt(version, profile_prompt(load_profile(store)), persona)
             runtime = AgentRuntime(
                 deps,
@@ -207,6 +217,7 @@ async def run_chat(
             prompt.apply(runtime)
             runtime.fewshots = fewshots
             runtime.recall = memory_recall(config, connection)
+            runtime.artifact_note = artifact_note_for(config, connection)
             install_guards(runtime, config.guards, read_env_file(config.guards.env_file))
             cache = semantic_cache(config, connection)
             if cache is not None:
@@ -214,8 +225,13 @@ async def run_chat(
             terminal.console.print(Text(_banner(config, registry, prompt), "dim"), soft_wrap=True)
             facts = FactStore(connection) if config.memory.enabled else None
             pair = Pair(config.agents, deps.gateway, deps.sink, config.structured.max_repairs)
+            document = (
+                StateDocument(ArtifactStore(connection), config.artifact.sections)
+                if config.artifact.enabled
+                else None
+            )
             await chat_loop(
-                runtime, session_id, terminal, store, registry, prompt, facts, pair, cache
+                runtime, session_id, terminal, store, registry, prompt, facts, pair, document, cache
             )
         return 0
     finally:
@@ -315,13 +331,14 @@ def _build_deps(
     connection: sqlite3.Connection,
     gateway: ModelGateway | None,
     registry: ToolRegistry,
+    sink: EventSink,
 ) -> RuntimeDeps:
     model = config.model
     return RuntimeDeps(
         gateway=gateway
         or OllamaGateway(model.host, model.name, model.timeout_s, model.temperature, model.think),
         store=SqliteSessionStore(connection),
-        sink=EventBus([SqliteEventJournal(connection), ConsoleRenderer(terminal)]),
+        sink=sink,
         channel=CliUserChannel(terminal),
         registry=registry,
         policy=ApprovalPolicy.from_config(config.policy),

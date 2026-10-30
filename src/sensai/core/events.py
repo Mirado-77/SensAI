@@ -28,6 +28,7 @@ GUARD_REDACTED = "guard.redacted"
 PROMPT_EXAMPLES = "prompt.examples"
 AGENTS_HANDOFF = "agents.handoff"
 AGENTS_VERDICT = "agents.verdict"
+ARTIFACT_PATCHED = "artifact.patched"
 CACHE_HIT = "cache.hit"
 CACHE_STORED = "cache.stored"
 
@@ -57,18 +58,17 @@ EVENT_TYPES = frozenset(
         PROMPT_EXAMPLES,
         AGENTS_HANDOFF,
         AGENTS_VERDICT,
+        ARTIFACT_PATCHED,
         CACHE_HIT,
         CACHE_STORED,
     }
 )
 
 MEMORY_COMPRESSED = "memory.compressed"
-ARTIFACT_PATCHED = "artifact.patched"
 
 RESERVED_EVENT_TYPES = frozenset(
     {
         MEMORY_COMPRESSED,
-        ARTIFACT_PATCHED,
     }
 )
 
