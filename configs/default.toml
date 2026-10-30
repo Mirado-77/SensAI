@@ -147,3 +147,9 @@ allowed_commands = [
     ["pytest", "-q"],
     ["ruff", "check", "."],
 ]
+
+
+[artifact]
+enabled = true
+sections = ["Objectif", "Décisions", "Fait", "Reste à faire", "Questions ouvertes"]
+max_section_chars = 5000

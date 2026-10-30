@@ -4,7 +4,9 @@ import sqlite3
 from collections.abc import Callable
 
 from sensai.core.config import Config
-from sensai.core.contracts import Tool
+from sensai.core.contracts import EventSink, Tool
+from sensai.memory.artifact import ArtifactStore, artifact_note
+from sensai.memory.artifact_tools import ArtifactPatchTool
 from sensai.memory.facts import FactStore, recall_note
 from sensai.memory.tools import (
     MemoryDeleteTool,
@@ -37,3 +39,27 @@ def memory_recall(
         return None
     store = FactStore(connection)
     return lambda text: recall_note(store, text, config.memory.recall)
+
+
+def artifact_tools(config: Config, connection: sqlite3.Connection, sink: EventSink) -> list[Tool]:
+    """The state document tool of the chat (M4), when `[artifact] enabled`."""
+    if not config.artifact.enabled:
+        return []
+    return [
+        ArtifactPatchTool(
+            ArtifactStore(connection),
+            sink,
+            config.artifact.sections,
+            config.artifact.max_section_chars,
+        )
+    ]
+
+
+def artifact_note_for(
+    config: Config, connection: sqlite3.Connection
+) -> Callable[[str], str | None] | None:
+    """What the runtime adds to the context at each turn (M4), or None when it is off."""
+    if not config.artifact.enabled:
+        return None
+    store = ArtifactStore(connection)
+    return lambda session_id: artifact_note(store, session_id, config.artifact.sections)

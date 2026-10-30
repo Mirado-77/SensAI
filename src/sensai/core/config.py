@@ -190,6 +190,14 @@ class SchedulerConfig(_Section):
         return commands
 
 
+class ArtifactConfig(_Section):
+    """Artifact configuration"""
+
+    enabled: bool
+    sections: list[str]
+    max_section_chars: int = Field(default=5000, ge=2000, le=7000)
+
+
 class Config(_Section):
     model: ModelConfig
     runtime: RuntimeConfig
@@ -208,6 +216,7 @@ class Config(_Section):
     guards: GuardsConfig
     web: WebConfig
     scheduler: SchedulerConfig
+    artifact: ArtifactConfig
 
 
 def _read_toml(path: Path) -> dict[str, Any]:

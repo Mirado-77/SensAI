@@ -71,11 +71,11 @@ def test_initial_vocabulary_is_complete():
         "agents.verdict",
         "question.requested",
         "question.answered",
+        "artifact.patched",
     }
 
     assert RESERVED_EVENT_TYPES == {
         "memory.compressed",
-        "artifact.patched",
     }
     assert ALL_EVENT_TYPES == EVENT_TYPES | RESERVED_EVENT_TYPES
 
