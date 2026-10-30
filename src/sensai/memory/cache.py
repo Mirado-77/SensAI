@@ -8,8 +8,8 @@ Entries are scoped by model, embedding model, prompt version and persona, and ex
 `ttl_hours`, so that answers about a codebase that changed do not live long.
 
 Embeddings barely see a different identifier or a negation (nomic-embed-text gives 0.85 between
-"what does count_done return" and the same about completion_rate, 0.955 for "what does it not
-return"), so a hit also needs the same code identifiers and the default `min_score` is high.
+"what does count_done return" and the same about completion_rate, 0.99 when "not" is added to a
+long question), so a hit also needs the same key terms: code identifiers and negation words.
 
 Event payloads (all events also carry `run_id`):
 
@@ -34,8 +34,11 @@ from sensai.rag.index import Embedder
 from sensai.tools.registry import ToolRegistry
 
 STORED_RISKS = frozenset({"read"})
-# Code identifiers: snake_case, dotted or path names, calls.
+# Code identifiers (snake_case, dotted or path names, calls) and negation words, French and English.
 _IDENTIFIER = re.compile(r"\w+\(\)|\w*[_./]\w[\w./]*")
+_NEGATION = re.compile(
+    r"\b(?:ne|n'|pas|jamais|aucun|aucune|sans|not|no|never|without|\w+n't)\b", re.IGNORECASE
+)
 
 
 class SemanticCache:
@@ -58,13 +61,13 @@ class SemanticCache:
 
     def lookup(self, scope: str, question: str, vector: array) -> tuple[str, str, float] | None:
         """The closest live entry of `scope` as (question, answer, score), if over `min_score` and
-        naming the same code identifiers as `question`."""
+        with the same key terms as `question`."""
         rows = self._db.execute(
             "SELECT question, answer, embedding FROM semantic_cache"
             " WHERE scope = ? AND created_at >= ?",
             (self._scope(scope), self._cutoff()),
         ).fetchall()
-        names = identifiers(question)
+        terms = key_terms(question)
         best = None
         for cached_question, answer, blob in rows:
             cached = array("f")
@@ -72,7 +75,7 @@ class SemanticCache:
             score = sum(a * b for a, b in zip(vector, cached, strict=False))
             if score < self._config.min_score or (best is not None and score <= best[2]):
                 continue
-            if identifiers(cached_question) == names:
+            if key_terms(cached_question) == terms:
                 best = (cached_question, answer, score)
         return best
 
@@ -151,8 +154,10 @@ def install_cache(
     runtime.exit_hooks.append(save)
 
 
-def identifiers(text: str) -> set[str]:
-    return {name.rstrip(".") for name in _IDENTIFIER.findall(text)}  # no full stop
+def key_terms(text: str) -> set[str]:
+    """Code identifiers and negation words of `text`, which a hit must share."""
+    names = {name.rstrip(".") for name in _IDENTIFIER.findall(text)}  # no full stop
+    return names | {word.lower() for word in _NEGATION.findall(text)}
 
 
 def _read_only(ctx: RunContext, registry: ToolRegistry) -> bool:

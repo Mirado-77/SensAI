@@ -16,7 +16,7 @@ from sensai.core.fakes import (
 from sensai.core.runtime import AgentRuntime, RuntimeDeps
 from sensai.core.types import Chunk, ToolCall, ToolResult
 from sensai.db.connection import connect
-from sensai.memory.cache import SemanticCache, identifiers, install_cache
+from sensai.memory.cache import SemanticCache, install_cache, key_terms
 from sensai.safety.policy import ApprovalPolicy
 from sensai.tools.registry import ToolRegistry
 
@@ -122,10 +122,12 @@ async def test_a_question_about_another_identifier_goes_to_the_model():
         ("Lis stats.py.", {"stats.py"}),
         ("explique taskman/stats.py et load_tasks()", {"taskman/stats.py", "load_tasks()"}),
         ("Comment sont sauvegardées les tâches ?", set()),
+        ("Que ne retourne pas completion_rate ?", {"completion_rate", "ne", "pas"}),
+        ("Why doesn't load_tasks() fail?", {"load_tasks()", "doesn't"}),
     ],
 )
-def test_identifiers(text, names):
-    assert identifiers(text) == names
+def test_key_terms(text, names):
+    assert key_terms(text) == names
 
 
 async def test_only_the_first_message_of_a_session_uses_the_cache():
