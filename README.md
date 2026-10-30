@@ -48,6 +48,7 @@ sensai> Phil
 | `/profile` | show your profile; `/profile instructions <text>`, `/profile set <key> <value>`, `/profile unset <key>`, `/profile clear` edit it |
 | `/memory` | list the project memory (M3); `/memory forget <id>` deletes one record |
 | `/doc` | show the state document of the session (M4): goal, decisions, what is done, what is left |
+| `/cache clear` | empty the semantic cache of answers (A6) |
 | `/persona` | list the personas, `*` marks the active one; `/persona reviewer` switches for the next turns, in the same session (A5) |
 | `/pair <task>` | the `dev` persona does the task, the `reviewer` persona reviews it, and they hand it back and forth until it is approved (A2) |
 | `/exit`, `/quit`, `Ctrl-D` or `Ctrl-C` at the prompt | quit |
@@ -247,6 +248,27 @@ Allow? [y/N] y
 sensai> C'est noté.
 ```
 
+### Semantic cache
+
+The first message of a session is embedded with `[rag] embed_model`. When a question already
+answered for the same model, prompt version and persona is close enough (cosine at least
+`[cache] min_score`) and shares the same key terms (code identifiers and negation words), its answer is shown and saved without
+calling the model; the chat says so. Turns that ran a write or exec tool, or where a tool failed,
+are not cached, entries
+expire after `[cache] ttl_hours`, and `/cache clear` empties the cache.
+
+The default `min_score` (0.96) is high on purpose: with `nomic-embed-text` the same question about
+another function scores 0.85 and a negation added to a long question 0.99, hence the key terms
+too. The cache serves a question retyped, not a rephrasing ([user stories](docs/user-stories/A6.md)).
+
+```text
+you> que retourne completion_rate dans taskman/stats.py
+cache> déjà répondu à « Que retourne completion_rate dans taskman/stats.py ? » (similarité 1.00), /cache clear pour l'oublier
+sensai> Le `completion_rate` dans `taskman/stats.py` retourne la proportion de tâches terminées [...]
+```
+
+Measured with `gemma4:e2b`: 10.4 s for the first answer (one `read_file`), 0.55 s from the cache.
+
 ### Few-shot examples and prompt variants
 
 `configs/prompts/examples/` holds question/answer pairs (one TOML file each, with `id`, `question`
@@ -445,6 +467,7 @@ file, one migration per pull request. Migrations are applied when the database i
 | A5 | Personas in configuration: `dev` and `reviewer` files in `configs/personas/` (prompt and allowed tool risks), `/persona <name>` switches in the chat without losing the history, `--persona` and `[prompts] persona`, persona recorded on every run | done ([user stories](docs/user-stories/A5.md)) |
 | M3 | Project memory in SQLite: facts (convention, decision, fact, entity) and relations driven by the model through five CRUD tools, each change approved, the closest records recalled at every turn, `/memory` in the chat | done ([user stories](docs/user-stories/M3.md)) |
 | M4 | State document of the session: the model patches one section at a time with `artifact_patch` (`append` or `replace`, each change approved and journaled), the document is sent at every turn, `/doc` in the chat, copied on `/fork`, `[artifact]` config | done ([user stories](docs/user-stories/M4.md)) |
+| A6 | Semantic cache: the first message of a session answered from SQLite without the model when an earlier question is close enough (cosine `[cache] min_score`, same code identifiers and negations, same model, prompt and persona), write and exec turns not cached, `[cache] ttl_hours`, `/cache clear` | done ([user stories](docs/user-stories/A6.md)) |
 | A2 | Developer and reviewer agents: `/pair <task>` hands the work from the `dev` persona to the read-only `reviewer` persona and back until a structured verdict approves it (`[agents] max_rounds`), each handoff and verdict journaled | done ([user stories](docs/user-stories/A2.md)) |
 | EV3 | Metrics from the event journal: `sensai stats` shows runs by status, tokens, turn duration and time to first token (avg, p50, p95, max), per-tool calls, errors and refusals, guard counts and recent errors, `--since`, `--json` | done ([user stories](docs/user-stories/EV3.md)) |
 | EV4 | Attack corpus in `evals/attacks/`: file injection, tool injection, paths outside the roots, secret leak, dangerous command; `make eval` writes a JSON and a Markdown report in `evals/reports/` | done ([user stories](docs/user-stories/EV4.md)) |

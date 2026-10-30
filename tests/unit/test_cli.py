@@ -216,6 +216,8 @@ def chat_setup(tmp_path, *lines, **overrides):
     memory = {"enabled": False}
     # M4 too; test_artifact covers it.
     artifact = {"enabled": False}
+    # A6 is off so that no test embeds through Ollama; test_cache covers it.
+    cache = {"enabled": False, "min_score": 0.92, "ttl_hours": 24}
     defaults = {
         "storage": storage,
         "react": react,
@@ -226,6 +228,7 @@ def chat_setup(tmp_path, *lines, **overrides):
         "scheduler": scheduler,
         "memory": memory,
         "artifact": artifact,
+        "cache": cache,
     }
     config = load_config(overrides={**defaults, **overrides})
     terminal, out, err = make_terminal(scripted(*lines))

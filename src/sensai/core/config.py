@@ -85,6 +85,14 @@ class MemoryConfig(_Section):
     recall: int = Field(ge=0, le=50)
 
 
+class CacheConfig(_Section):
+    """Semantic cache (A6): answers served again for a question whose embedding is close enough."""
+
+    enabled: bool
+    min_score: float = Field(ge=0.0, le=1.0)
+    ttl_hours: float = Field(gt=0)
+
+
 class StorageConfig(_Section):
     db_path: Path
 
@@ -208,6 +216,7 @@ class Config(_Section):
     prompts: PromptsConfig
     memory: MemoryConfig
     agents: AgentsConfig
+    cache: CacheConfig
     storage: StorageConfig
     policy: PolicyConfig
     files: FilesConfig
