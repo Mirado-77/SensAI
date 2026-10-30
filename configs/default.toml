@@ -155,3 +155,11 @@ allowed_commands = [
 enabled = true
 sections = ["Objectif", "Décisions", "Fait", "Reste à faire", "Questions ouvertes"]
 max_section_chars = 5000
+
+[export]
+# Export and sharing (X3): `sensai export` writes JSON, Markdown or PDF; `sensai share` writes a
+# page in `shares_dir` named by a random token and `sensai share --serve` serves it, without auth,
+# at http://host:port/s/<token>. Keep 127.0.0.1 unless the link must open from another machine.
+shares_dir = "~/.sensai/shares"
+host = "127.0.0.1"
+port = 8765

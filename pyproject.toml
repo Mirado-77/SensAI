@@ -17,6 +17,7 @@ dev = [
     "respx>=0.21",
     "ruff>=0.6",
 ]
+pdf = ["weasyprint>=60"]
 
 [project.scripts]
 sensai = "sensai.cli.main:main"
