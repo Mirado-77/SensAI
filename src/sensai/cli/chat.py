@@ -12,7 +12,7 @@ from rich.text import Text
 from sensai.cli.artifact import DOC_COMMAND, StateDocument, print_document
 from sensai.cli.channel import CliUserChannel
 from sensai.cli.fork import FORK_COMMAND, HISTORY_COMMAND, print_history, run_fork_command
-from sensai.cli.memory import MEMORY_COMMAND, run_memory_command
+from sensai.cli.memory import CACHE_COMMAND, MEMORY_COMMAND, run_cache_command, run_memory_command
 from sensai.cli.pair import PAIR_COMMAND, Pair
 from sensai.cli.personas import PERSONA_COMMAND, run_persona_command
 from sensai.cli.profile import (
@@ -36,6 +36,7 @@ from sensai.core.runtime import AgentRuntime, RunResult, RuntimeDeps
 from sensai.db.connection import connect
 from sensai.memory import artifact_note_for, artifact_tools, memory_recall, memory_tools
 from sensai.memory.artifact import ArtifactStore
+from sensai.memory.cache import SemanticCache, install_cache, semantic_cache
 from sensai.memory.facts import FactStore
 from sensai.memory.sqlite_store import SqliteSessionStore
 from sensai.model.ollama import OllamaGateway
@@ -101,6 +102,7 @@ async def chat_loop(
     facts: FactStore | None = None,
     pair: Pair | None = None,
     document: StateDocument | None = None,
+    cache: SemanticCache | None = None,
 ) -> None:
     """Read lines and run one turn per line, until /exit, Ctrl-D or Ctrl-C at the prompt."""
     while True:
@@ -132,6 +134,8 @@ async def chat_loop(
             await pair.run(runtime, prompt, session_id, terminal, text, run_interruptible)
         elif text.split(" ", 1)[0] == MEMORY_COMMAND:
             run_memory_command(facts, terminal, text)
+        elif text.split(" ", 1)[0] == CACHE_COMMAND:
+            run_cache_command(cache, terminal, text)
         elif text == HISTORY_COMMAND:
             print_history(store, terminal, session_id)
         elif text == DOC_COMMAND:
@@ -215,6 +219,9 @@ async def run_chat(
             runtime.recall = memory_recall(config, connection)
             runtime.artifact_note = artifact_note_for(config, connection)
             install_guards(runtime, config.guards, read_env_file(config.guards.env_file))
+            cache = semantic_cache(config, connection)
+            if cache is not None:
+                install_cache(runtime, cache, store, registry, config.model.name)
             terminal.console.print(Text(_banner(config, registry, prompt), "dim"), soft_wrap=True)
             facts = FactStore(connection) if config.memory.enabled else None
             pair = Pair(config.agents, deps.gateway, deps.sink, config.structured.max_repairs)
@@ -224,7 +231,7 @@ async def run_chat(
                 else None
             )
             await chat_loop(
-                runtime, session_id, terminal, store, registry, prompt, facts, pair, document
+                runtime, session_id, terminal, store, registry, prompt, facts, pair, document, cache
             )
         return 0
     finally:

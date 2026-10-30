@@ -30,6 +30,7 @@ Event payloads (all events also carry `run_id`):
 - question.requested, question.answered: see `sensai.core.questions`
 - guard.blocked: stage ("entry" or "tool"), reason, and tool for a tool output
 - guard.redacted: stage ("answer" or "tool"), count, and tool for a tool output
+- cache.hit, cache.stored: see `sensai.memory.cache`
 - run.completed: session_id, steps, tool_calls
 - run.cancelled: session_id, partial
 - run.failed: session_id, error_type, error
@@ -110,7 +111,8 @@ class RunResult:
 
 @dataclass
 class RunContext:
-    """What hooks see and may change. `answer` is only set once the model has answered."""
+    """What hooks see and may change. `answer` is set once the model has answered, or by an entry
+    hook that answers instead of the model (A6), which then shows it as one model.chunk."""
 
     run_id: str
     session_id: str
@@ -118,6 +120,7 @@ class RunContext:
     messages: list[Message] = field(default_factory=list)
     answer: str = ""
     notices: list[tuple[str, dict[str, Any]]] = field(default_factory=list)
+    tool_errors: int = 0  # tool results of this turn that were errors
 
 
 Hook = Callable[[RunContext], Awaitable[None]]
@@ -215,10 +218,14 @@ class AgentRuntime:
         ctx = RunContext(run_id, session_id, user_text)
         await self._run_hooks(self.entry_hooks, ctx)
         self._build_context(ctx, state)
-        if self._react is not None:
-            await self._plan(ctx, state)
-        assistant = await self._model_loop(ctx, state)
-        ctx.answer = assistant.content
+        if ctx.answer:  # an entry hook answered (A6 semantic cache): no model call
+            self._emit(MODEL_CHUNK, ctx.run_id, text=ctx.answer)
+            assistant = Message("assistant", ctx.answer)
+        else:
+            if self._react is not None:
+                await self._plan(ctx, state)
+            assistant = await self._model_loop(ctx, state)
+            ctx.answer = assistant.content
         await self._run_hooks(self.exit_hooks, ctx)
         state.new_messages.append(replace(assistant, content=ctx.answer))
         return ctx.answer
@@ -352,7 +359,9 @@ class AgentRuntime:
         results = []
         for call_id, call in zip(call_ids, assistant.tool_calls, strict=True):
             self._count_tool_call(state)
-            results.append((call, await self._run_tool(ctx, state, call_id, call)))
+            result = await self._run_tool(ctx, state, call_id, call)
+            ctx.tool_errors += result.is_error
+            results.append((call, result))
         return results
 
     async def _run_tool(

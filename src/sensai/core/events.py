@@ -29,6 +29,8 @@ PROMPT_EXAMPLES = "prompt.examples"
 AGENTS_HANDOFF = "agents.handoff"
 AGENTS_VERDICT = "agents.verdict"
 ARTIFACT_PATCHED = "artifact.patched"
+CACHE_HIT = "cache.hit"
+CACHE_STORED = "cache.stored"
 
 EVENT_TYPES = frozenset(
     {
@@ -57,6 +59,8 @@ EVENT_TYPES = frozenset(
         AGENTS_HANDOFF,
         AGENTS_VERDICT,
         ARTIFACT_PATCHED,
+        CACHE_HIT,
+        CACHE_STORED,
     }
 )
 
