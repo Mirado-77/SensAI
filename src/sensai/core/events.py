@@ -28,6 +28,8 @@ GUARD_REDACTED = "guard.redacted"
 PROMPT_EXAMPLES = "prompt.examples"
 AGENTS_HANDOFF = "agents.handoff"
 AGENTS_VERDICT = "agents.verdict"
+CACHE_HIT = "cache.hit"
+CACHE_STORED = "cache.stored"
 
 EVENT_TYPES = frozenset(
     {
@@ -55,6 +57,8 @@ EVENT_TYPES = frozenset(
         PROMPT_EXAMPLES,
         AGENTS_HANDOFF,
         AGENTS_VERDICT,
+        CACHE_HIT,
+        CACHE_STORED,
     }
 )
 

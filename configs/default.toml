@@ -51,6 +51,16 @@ dev = "dev"
 reviewer = "reviewer"
 max_rounds = 2
 
+[cache]
+# Semantic cache (A6): the first message of a session is embedded with [rag] embed_model; when a
+# question of the same model, prompt version and persona is at least `min_score` close (cosine)
+# and names the same code identifiers, its answer is served without calling the model. 0.96
+# catches the same question retyped (case, punctuation), not a synonym nor a negation (0.955).
+# Turns that ran a write or exec tool are not cached, entries expire after `ttl_hours`.
+enabled = true
+min_score = 0.96
+ttl_hours = 24
+
 [memory]
 # Project memory (M3): the model saves conventions, decisions, facts and relations in the
 # database (each change approved by the user). At every turn the conventions and the `recall`

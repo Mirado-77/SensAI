@@ -69,6 +69,8 @@ def test_initial_vocabulary_is_complete():
         "prompt.examples",
         "agents.handoff",
         "agents.verdict",
+        "cache.hit",
+        "cache.stored",
         "question.requested",
         "question.answered",
     }
