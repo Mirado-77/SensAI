@@ -13,6 +13,7 @@ from typing import Any
 from rich.console import Console
 from rich.text import Text
 
+from sensai.cli.api import run_api
 from sensai.cli.ask import run_ask
 from sensai.cli.chat import LAST_SESSION, _open_database, print_sessions, run_chat
 from sensai.cli.export import FORMATS, run_export, run_revoke, run_serve, run_share
@@ -87,6 +88,8 @@ def build_parser() -> argparse.ArgumentParser:
     target.add_argument("session", nargs="?", help="session id to share (a prefix is enough)")
     target.add_argument("--revoke", metavar="TOKEN", help="delete a share, its link stops working")
     target.add_argument("--serve", action="store_true", help="serve the shares until Ctrl-C")
+    api = commands.add_parser("start:api", help="serve the API and the web UI until Ctrl-C (X1)")
+    _add_common_options(api)
     return parser
 
 
@@ -139,6 +142,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return run_export(config, terminal, args.session, args.format, args.output)
     if args.command == "share":
         return _share(args, config, terminal)
+    if args.command == "start:api":
+        return run_api(config, terminal)
     return _run(run_chat(config, terminal, resume=args.resume), terminal)
 
 

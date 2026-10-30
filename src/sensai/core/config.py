@@ -216,6 +216,15 @@ class ExportConfig(_Section):
     port: int = Field(gt=0, le=65535)
 
 
+class ApiConfig(_Section):
+    """HTTP and WebSocket API (X1) used by the web UI and the other clients. `web_dir` is the built
+    web UI, served at / when it exists."""
+
+    host: str = "127.0.0.1"
+    port: int = Field(gt=0, le=65535)
+    web_dir: Path
+
+
 class Config(_Section):
     model: ModelConfig
     runtime: RuntimeConfig
@@ -237,6 +246,7 @@ class Config(_Section):
     scheduler: SchedulerConfig
     artifact: ArtifactConfig
     export: ExportConfig
+    api: ApiConfig
 
 
 def _read_toml(path: Path) -> dict[str, Any]:

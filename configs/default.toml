@@ -173,3 +173,11 @@ max_section_chars = 5000
 shares_dir = "~/.sensai/shares"
 host = "127.0.0.1"
 port = 8765
+
+[api]
+# API (X1): `sensai start:api` serves the REST routes under /api, the event stream on
+# ws://host:port/ws/sessions/<id> and the built web UI (`web_dir`) at http://host:port/.
+# No auth: keep 127.0.0.1.
+host = "127.0.0.1"
+port = 8000
+web_dir = "web/dist"
