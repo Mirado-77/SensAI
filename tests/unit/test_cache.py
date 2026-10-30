@@ -14,7 +14,7 @@ from sensai.core.fakes import (
     InMemorySessionStore,
 )
 from sensai.core.runtime import AgentRuntime, RuntimeDeps
-from sensai.core.types import Chunk, ToolCall
+from sensai.core.types import Chunk, ToolCall, ToolResult
 from sensai.db.connection import connect
 from sensai.memory.cache import SemanticCache, identifiers, install_cache
 from sensai.safety.policy import ApprovalPolicy
@@ -148,6 +148,16 @@ async def test_a_turn_that_changed_something_is_not_stored(risk, stored):
     await runtime.run_turn(store.create_session(), QUESTION)
 
     assert bool(events_of(sink, "cache.stored")) is stored
+
+
+async def test_a_turn_where_a_tool_failed_is_not_stored():
+    tool = FakeTool(name="read_file", result=ToolResult("File not found.", is_error=True))
+    runtime, _, store, sink, _ = build(
+        [ToolCall("read_file", {})], [Chunk("I cannot find the file.")], tools=[tool]
+    )
+    await runtime.run_turn(store.create_session(), QUESTION)
+
+    assert events_of(sink, "cache.stored") == []
 
 
 async def test_another_persona_does_not_get_the_cached_answer():

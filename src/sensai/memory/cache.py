@@ -2,7 +2,8 @@
 again without calling the model.
 
 Only the first message of a session is looked up and stored: a later answer depends on the
-conversation. A turn that ran a write or exec tool is not stored, its answer reports an action.
+conversation. A turn that ran a write or exec tool is not stored, its answer reports an action,
+nor a turn where a tool failed, its answer reports the failure.
 Entries are scoped by model, embedding model, prompt version and persona, and expire after
 `ttl_hours`, so that answers about a codebase that changed do not live long.
 
@@ -139,7 +140,9 @@ def install_cache(
 
     async def save(ctx: RunContext) -> None:
         vector = pending.pop(ctx.run_id, None)
-        if vector is None or not ctx.answer.strip() or not _read_only(ctx, registry):
+        if vector is None or not ctx.answer.strip() or ctx.tool_errors:
+            return
+        if not _read_only(ctx, registry):
             return
         cache.store(scope(), ctx.user_text, vector, ctx.answer)
         ctx.notices.append((CACHE_STORED, {"question": ctx.user_text}))

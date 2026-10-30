@@ -119,6 +119,7 @@ class RunContext:
     messages: list[Message] = field(default_factory=list)
     answer: str = ""
     notices: list[tuple[str, dict[str, Any]]] = field(default_factory=list)
+    tool_errors: int = 0  # tool results of this turn that were errors
 
 
 Hook = Callable[[RunContext], Awaitable[None]]
@@ -353,7 +354,9 @@ class AgentRuntime:
         results = []
         for call_id, call in zip(call_ids, assistant.tool_calls, strict=True):
             self._count_tool_call(state)
-            results.append((call, await self._run_tool(ctx, state, call_id, call)))
+            result = await self._run_tool(ctx, state, call_id, call)
+            ctx.tool_errors += result.is_error
+            results.append((call, result))
         return results
 
     async def _run_tool(
