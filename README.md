@@ -268,6 +268,27 @@ A share is a snapshot: an HTML page saved in `[export] shares_dir` under a rando
 link; nobody can guess it. The server only answers `/s/<token>`, read-only. It listens on
 `127.0.0.1` by default; set `[export] host = "0.0.0.0"` to open the link from another device on
 the same network.
+### API: `sensai start:api`
+
+`sensai start:api` serves the API used by the web UI and by any other client (X1) until Ctrl-C.
+It builds the same runtime as `sensai chat` (tools, MCP servers, guards, cache), so a turn
+behaves the same in both. It listens on `[api] host` and `port` (`127.0.0.1:8000`, no auth).
+
+```bash
+sensai start:api                       # prints the addresses below
+curl http://127.0.0.1:8000/api/health  # {"name": "sensai"}
+```
+
+- REST under `/api`: `health`, `config` (model, prompt versions, personas), `sessions` (list,
+  create), `sessions/<id>/messages`, `sessions/<id>/fork` with `{"message_id": ...}`. The full
+  list is at `/docs`.
+- WebSocket `/ws/sessions/<id>`: one JSON object per frame. The server sends `ready`, `event`
+  (the same events as the CLI and the journal), `confirm` and `ask` (approval and question,
+  answered with the same `id`), `persona`, `idle` at the end of a turn, `warning` and `error`.
+  The client sends `message` `{text}`, `cancel`, `approval` `{id, allowed}`, `answer`
+  `{id, answer}` and `persona` `{name}`.
+- The built web UI (`[api] web_dir`, `web/dist`) is served at `/` once it exists.
+
 ### Semantic cache
 
 The first message of a session is embedded with `[rag] embed_model`. When a question already
@@ -400,6 +421,7 @@ name = "llama3.2:3b"
 | `[mcp]` | `timeout_s`, `[[mcp.servers]]` | Maximum time of one MCP request; MCP servers: `name`, `command`, `args`, `env`, `cwd`, `enabled`, `risk` (`read`, `write`, `exec` or `auto`) |
 | `[storage]` | `db_path` | sqlite database holding sessions, messages and the event journal |
 | `[export]` | `shares_dir`, `host`, `port` | Shared pages of `sensai share` and the address `sensai share --serve` listens on (X3) |
+| `[api]` | `host`, `port`, `web_dir` | Address `sensai start:api` listens on, built web UI served at `/` (X1) |
 | `[policy]` | `read`, `write`, `exec` | Before a tool runs: `allow`, `ask` (user approval) or `deny` |
 | `[sandbox]` | `enabled`, `image`, `cpus`, `memory_mb`, `pids_limit`, `timeout_s`, `max_output_bytes` | `run_command` container: image, limits, maximum time of one command, output kept for the model |
 | `[rag]` | `enabled`, `embed_model`, `chunk_lines`, `overlap`, `top_k`, `candidates`, `min_score`, `max_chars`, `document_prefix`, `query_prefix` | Codebase search: Ollama embedding model, lines per chunk and lines shared by two chunks, excerpts returned by `search_code`, candidates kept before the relevance cut, minimum cosine similarity, character budget per result, task prefixes for nomic-embed-text (empty for other models) |
@@ -458,6 +480,8 @@ file, one migration per pull request. Migrations are applied when the database i
 - `src/sensai/evals/`: EV1 judge, EV4 attack corpus runner and reports.
 - `src/sensai/benchmarks/`: generic benchmark runner built on `evals/` (`benchmarks/*.toml`, reports in `docs/benchmarks/`).
 - `src/sensai/db/`: connection and migrations.
+- `src/sensai/assembly.py`: builds the runtime (tools, MCP servers, prompt, hooks), shared by the CLI and the API.
+- `src/sensai/api/`: FastAPI app (X1): REST routes, session WebSocket, event sink and approval channel of a client.
 - `src/sensai/cli/`: chat loop, console rendering, approval prompt.
 - `configs/`: TOML configuration (`default.toml`, profiles, personas, policies) and example JSON Schemas (`schemas/`).
 - `docker/ollama/`: Dockerfile and launch script for the Ollama server.
@@ -495,6 +519,7 @@ file, one migration per pull request. Migrations are applied when the database i
 | EV4 | Attack corpus in `evals/attacks/`: file injection, tool injection, paths outside the roots, secret leak, dangerous command; `make eval` writes a JSON and a Markdown report in `evals/reports/` | done ([user stories](docs/user-stories/EV4.md)) |
 | EV2 | Guards: user messages and tool outputs refused when they try to override the instructions, `.env` values and common key formats redacted from tool outputs and answers, emails and phone numbers masked as `[EMAIL]` and `[PHONE]` (`[guards] pii`), `[guards]` config | done ([user stories](docs/user-stories/EV2.md)) |
 | T3 | Web search through a local SearXNG (`make searxng`, no API key, no quota): `web_search` with `allowed_domains` / `blocked_domains`, results marked untrusted, `[web]` config | done ([user stories](docs/user-stories/T3.md)) |
+| X1 | Web UI: `sensai start:api` serves the REST routes and the session WebSocket (streamed events, approvals, questions, cancel, persona switch, fork) with the same runtime as the CLI | in progress: API done, web UI to come |
 
 Foundations already in place for the next features: the tool-call path of the agent loop
 (registry, approval by risk level, untrusted content marking), the event journal, and the
