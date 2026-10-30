@@ -36,6 +36,21 @@ Critères d'acceptation :
   outil, `tool`.
 - `[guards] enabled = false` désactive les deux garde-fous, sans toucher au code.
 
+## Story 3
+
+En tant que développeuse dont le dépôt contient des coordonnées (auteurs, clients de test), je
+veux que les e-mails et les numéros de téléphone ne sortent pas dans le contexte du modèle ni dans
+les réponses, afin de ne pas diffuser de données personnelles.
+
+Critères d'acceptation :
+- Les adresses e-mail sont remplacées par `[EMAIL]` et les numéros de téléphone (format
+  international `+33 6 12 34 56 78` ou français `06 12 34 56 78`) par `[PHONE]`, dans les sorties
+  d'outils et dans la réponse finale enregistrée.
+- Les numéros de version, ports, dates, identifiants et l'opérateur `@` du code ne sont pas pris
+  pour des données personnelles.
+- Chaque masquage compte dans `guard.redacted`, comme pour les secrets.
+- `[guards] pii = false` désactive le masquage sans toucher aux autres garde-fous.
+
 ## Limites connues
 
 - La détection d'injection repose sur une liste de formulations (français et anglais). Elle ne
@@ -43,10 +58,14 @@ Critères d'acceptation :
   (par exemple un fichier du projet qui documente ces phrases).
 - Le texte streamé vers la console est affiché au fil de l'eau : la rédaction s'applique à la
   réponse finale, pas aux morceaux déjà affichés.
+- Le masquage des données personnelles ne couvre que les e-mails et les téléphones : les noms et
+  adresses postales passent. Un e-mail dans un fichier lu est aussi masqué, donc l'agent ne peut
+  pas le recopier tel quel dans une modification.
 
 ## Tests
 
 - `tests/unit/test_ev2_guards.py` : parcours de bout en bout sur le runtime (entrée, sortie
   d'outil, réponse, désactivation).
 - `tests/unit/test_safety_injection.py` : détection des formulations et contournements.
-- `tests/unit/test_safety_secrets.py` : lecture de `.env` et rédaction.
+- `tests/unit/test_safety_secrets.py` : lecture de `.env`, rédaction et masquage des
+  e-mails et téléphones.

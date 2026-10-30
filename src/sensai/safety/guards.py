@@ -18,7 +18,7 @@ def install_guards(runtime: AgentRuntime, config: GuardsConfig, secrets: Mapping
     """Register the guards on `runtime`, unless disabled by `config`."""
     if not config.enabled:
         return
-    redactor = SecretRedactor(secrets.values())
+    redactor = SecretRedactor(secrets.values(), pii=config.pii)
     runtime.entry_hooks.append(check_input)
     runtime.exit_hooks.append(redact_answer(redactor))
     runtime.result_hooks.append(guard_tool_output(redactor))
