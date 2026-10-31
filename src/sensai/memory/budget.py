@@ -38,8 +38,8 @@ def install_memory(
     store: SessionStore,
     gateway: ModelGateway,
 ) -> None:
-    """Register the budget and the compression on `runtime`, unless disabled by `config`."""
-    if not config.enabled:
+    """Register the budget and the compression on `runtime`, unless `[memory] compress` is off."""
+    if not config.compress:
         return
     runtime.entry_hooks.append(compress_history(runtime, config, context_tokens, store, gateway))
     runtime.exit_hooks.append(report_budget(runtime, context_tokens))

@@ -53,6 +53,7 @@ persona = "dev"
 # keep_turns turns are kept as they are.
 enabled = true
 recall = 8
+compress = true
 compress_at = 0.75
 keep_turns = 2
 

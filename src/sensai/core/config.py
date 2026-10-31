@@ -78,6 +78,7 @@ class MemoryConfig(_Section):
 
     enabled: bool
     recall: int = Field(ge=0, le=50)
+    compress: bool
     compress_at: float = Field(gt=0, le=1)
     keep_turns: int = Field(gt=0)
 

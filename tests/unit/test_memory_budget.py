@@ -42,7 +42,7 @@ def build(*scripts, context_tokens=400, enabled=True):
     )
     config = RuntimeConfig(max_steps=8, max_tool_calls=8, timeout_s=5, max_tokens=10_000)
     runtime = AgentRuntime(deps, config, "test-model")
-    memory = MemoryConfig(enabled=enabled, recall=0, compress_at=0.5, keep_turns=1)
+    memory = MemoryConfig(enabled=False, recall=0, compress=enabled, compress_at=0.5, keep_turns=1)
     install_memory(runtime, memory, context_tokens, store, gateway)
     return runtime, gateway, store, sink, store.create_session()
 
