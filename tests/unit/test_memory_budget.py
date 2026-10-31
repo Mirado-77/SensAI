@@ -154,8 +154,8 @@ def test_renderer_shows_the_budget_and_the_compression():
 
 
 async def test_the_chat_shows_the_budget_after_each_turn(tmp_path):
-    # chat_setup turns [memory] off (M3); M2 shares the switch, so it is turned back on here.
-    config, terminal, out, _ = chat_setup(tmp_path, "hello", memory={"enabled": True})
+    # chat_setup turns M3 off ([memory] enabled), M2 ([memory] compress) stays on.
+    config, terminal, out, _ = chat_setup(tmp_path, "hello")
     await run_chat(config, terminal, FakeModelGateway([Chunk("hi")]))
     assert f"/{config.model.num_ctx} (0%)" in out.getvalue()
 
