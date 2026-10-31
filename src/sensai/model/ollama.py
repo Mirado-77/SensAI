@@ -14,10 +14,20 @@ _CUT_MESSAGE = "La connexion avec Ollama s'est interrompue avant la fin de la rÃ
 
 
 class OllamaGateway:
-    def __init__(self, host: str, model: str, timeout_s: float, num_ctx: int | None = None) -> None:
+    def __init__(
+        self,
+        host: str,
+        model: str,
+        timeout_s: float,
+        temperature: float,
+        think: bool = False,
+        num_ctx: int | None = None,
+    ) -> None:
         self._host = host.rstrip("/")
         self._model = model
         self._timeout = httpx.Timeout(timeout_s)
+        self._think = think
+        self._temperature = temperature
         self._num_ctx = num_ctx
 
     async def stream_chat(
@@ -26,9 +36,11 @@ class OllamaGateway:
         tools: list[ToolSpec] | None = None,
         schema: dict[str, Any] | None = None,
     ) -> AsyncIterator[ModelEvent]:
-        payload = _build_payload(self._model, messages, tools, schema)
+        payload = _build_payload(
+            self._model, messages, tools, schema, self._temperature, self._think
+        )
         if self._num_ctx is not None:
-            payload["options"] = {"num_ctx": self._num_ctx}
+            payload["options"]["num_ctx"] = self._num_ctx
         try:
             async with self._open(payload) as response:
                 done = False
@@ -86,11 +98,16 @@ def _build_payload(
     messages: list[Message],
     tools: list[ToolSpec] | None,
     schema: dict[str, Any] | None,
+    temperature: float,
+    think: bool = False,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "model": model,
         "messages": [_message_payload(message) for message in messages],
         "stream": True,
+        # Thinking models (qwen3) spend the completion budget on hidden reasoning otherwise.
+        "think": think,
+        "options": {"temperature": temperature},
     }
     if tools:
         payload["tools"] = [_tool_payload(tool) for tool in tools]

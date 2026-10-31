@@ -6,6 +6,7 @@ from rich.text import Text
 
 from sensai.cli.terminal import Terminal
 from sensai.core.errors import ConfigError
+from sensai.core.personas import Persona
 from sensai.core.prompts import (
     PromptVersion,
     diff_versions,
@@ -20,14 +21,23 @@ PROMPT_COMMAND = "/prompt"
 
 @dataclass
 class ChatPrompt:
-    """What the chat sends as system prompt: a prompt version and the profile (M1)."""
+    """What the chat sends as system prompt: a prompt version, the persona (A5), the profile (M1).
+
+    The persona also sets the tool risk levels the runtime offers to the model.
+    """
 
     version: PromptVersion | None
     profile: str | None = None
+    persona: Persona | None = None
 
     def apply(self, runtime: AgentRuntime) -> None:
-        runtime.system_prompt = system_prompt(self.version, self.profile)
+        persona = self.persona
+        runtime.system_prompt = system_prompt(
+            self.version, self.profile, persona.prompt if persona else None
+        )
         runtime.prompt_version = self.version.label if self.version else None
+        runtime.persona = persona.name if persona else None
+        runtime.tool_risks = persona.risks if persona else None
 
 
 def run_prompt_command(prompt: ChatPrompt, terminal: Terminal, text: str) -> None:

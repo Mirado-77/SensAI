@@ -80,7 +80,9 @@ async def run_ask(
         return 2
     try:
         model = config.model
-        gateway = gateway or OllamaGateway(model.host, model.name, model.timeout_s, model.num_ctx)
+        gateway = gateway or OllamaGateway(
+            model.host, model.name, model.timeout_s, model.temperature, model.think, model.num_ctx
+        )
         sink = EventBus([SqliteEventJournal(connection), _RepairNotices(terminal)])
         store = SqliteSessionStore(connection)
         result = await _ask(config, gateway, sink, store, schema, question)

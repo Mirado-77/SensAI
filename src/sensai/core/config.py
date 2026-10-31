@@ -31,6 +31,8 @@ class ModelConfig(_Section):
     name: str = Field(min_length=1)
     host: str = Field(min_length=1)
     timeout_s: float = Field(gt=0)
+    think: bool = False  # hidden reasoning of thinking models; off, it would eat the answer budget
+    temperature: float = Field(default=0.5, ge=0.0, le=1.0)
     num_ctx: int = Field(gt=0)
 
 
@@ -60,16 +62,22 @@ class QuestionsConfig(_Section):
 
 
 class PromptsConfig(_Section):
-    """Versioned system prompts (A4). `system` names a file of configs/prompts/system; "" = none."""
+    """Versioned system prompts (A4). `system` names a file of configs/prompts/system; "" = none.
+    `examples` is the number of few-shot examples of configs/prompts/examples sent per turn (A7).
+    `persona` names a file of configs/personas active at start (A5); "" = none."""
 
     system: str = Field(pattern=r"^([A-Za-z0-9_-]+)?$")
+    examples: int = Field(ge=0, le=5)
+    persona: str = Field(default="", pattern=r"^([A-Za-z0-9_-]+)?$")
 
 
 class MemoryConfig(_Section):
-    """Context budget (M2): old turns are summarized once the context reaches `compress_at` of
+    """Project memory (M3): facts saved by the model, `recall` of them sent at each turn.
+    Context budget (M2): old turns are summarized once the context reaches `compress_at` of
     the model window (`[model] num_ctx`); the last `keep_turns` turns are kept as they are."""
 
     enabled: bool
+    recall: int = Field(ge=0, le=50)
     compress_at: float = Field(gt=0, le=1)
     keep_turns: int = Field(gt=0)
 
@@ -142,6 +150,12 @@ class RagConfig(_Section):
     chunk_lines: int = Field(gt=0)
     overlap: int = Field(ge=0)
     top_k: int = Field(gt=0, le=20)
+    candidates: int = Field(default=20, ge=1, le=200)
+    min_score: float = Field(default=0.55, ge=0.0, le=1.0)
+    max_chars: int = Field(default=4000, ge=1)
+    # Task prefixes added before embedding (nomic-embed-text uses search_document / search_query).
+    document_prefix: str = ""
+    query_prefix: str = ""
 
     @model_validator(mode="after")
     def _overlap_below_chunk(self) -> "RagConfig":

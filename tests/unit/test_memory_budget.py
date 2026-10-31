@@ -42,7 +42,7 @@ def build(*scripts, context_tokens=400, enabled=True):
     )
     config = RuntimeConfig(max_steps=8, max_tool_calls=8, timeout_s=5, max_tokens=10_000)
     runtime = AgentRuntime(deps, config, "test-model")
-    memory = MemoryConfig(enabled=enabled, compress_at=0.5, keep_turns=1)
+    memory = MemoryConfig(enabled=enabled, recall=0, compress_at=0.5, keep_turns=1)
     install_memory(runtime, memory, context_tokens, store, gateway)
     return runtime, gateway, store, sink, store.create_session()
 
@@ -154,7 +154,8 @@ def test_renderer_shows_the_budget_and_the_compression():
 
 
 async def test_the_chat_shows_the_budget_after_each_turn(tmp_path):
-    config, terminal, out, _ = chat_setup(tmp_path, "hello")
+    # chat_setup turns [memory] off (M3); M2 shares the switch, so it is turned back on here.
+    config, terminal, out, _ = chat_setup(tmp_path, "hello", memory={"enabled": True})
     await run_chat(config, terminal, FakeModelGateway([Chunk("hi")]))
     assert f"/{config.model.num_ctx} (0%)" in out.getvalue()
 
@@ -164,6 +165,8 @@ async def test_the_gateway_sends_the_context_window_to_ollama(ollama_host, ollam
         route = router.post("/api/chat").mock(
             return_value=httpx.Response(200, content=b"".join(ollama_lines([Chunk("a")])))
         )
-        gateway = OllamaGateway(ollama_host, "test-model", timeout_s=5, num_ctx=8192)
+        gateway = OllamaGateway(
+            ollama_host, "test-model", timeout_s=5, temperature=0.5, num_ctx=8192
+        )
         [_ async for _ in gateway.stream_chat([Message("user", "hi")])]
-    assert json.loads(route.calls.last.request.content)["options"] == {"num_ctx": 8192}
+    assert json.loads(route.calls.last.request.content)["options"]["num_ctx"] == 8192

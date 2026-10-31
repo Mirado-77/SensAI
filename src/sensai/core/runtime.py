@@ -13,7 +13,9 @@ can call `ask_user`, handled here through the UserChannel (see `sensai.core.ques
 
 Event payloads (all events also carry `run_id`):
 
-- run.started: session_id, model, prompt_version (A4: `<name>@<sha>` or None)
+- run.started: session_id, model, prompt_version (A4: `<name>@<sha>` or None), persona (A5 or
+  None)
+- prompt.examples: examples (A7: ids of the few-shot examples sent before the conversation)
 - model.chunk: text
 - model.tool_call: call_id, name, args
 - model.usage: prompt_tokens, completion_tokens
@@ -22,8 +24,8 @@ Event payloads (all events also carry `run_id`):
 - approval.resolved: call_id, tool, approved
 - tool.started: call_id, tool, risk, args
 - tool.finished: call_id, tool, is_error, duration_ms, content
-- tool.failed: call_id, tool, error ("unknown tool", "invalid arguments", "denied",
-  "too many questions" or the exception)
+- tool.failed: call_id, tool, error ("unknown tool", "not allowed" for a risk level outside
+  `tool_risks` (A5), "invalid arguments", "denied", "too many questions" or the exception)
 - react.plan, react.action, react.observation: see `sensai.core.react`
 - question.requested, question.answered: see `sensai.core.questions`
 - guard.blocked: stage ("entry" or "tool"), reason, and tool for a tool output
@@ -31,6 +33,8 @@ Event payloads (all events also carry `run_id`):
 - run.completed: session_id, steps, tool_calls
 - run.cancelled: session_id, partial
 - run.failed: session_id, error_type, error
+
+`recall` (M3) adds the project memory closest to the message as a system message, not saved.
 """
 
 import asyncio
@@ -49,6 +53,7 @@ from sensai.core.events import (
     MODEL_CHUNK,
     MODEL_TOOL_CALL,
     MODEL_USAGE,
+    PROMPT_EXAMPLES,
     QUESTION_ANSWERED,
     QUESTION_REQUESTED,
     REACT_ACTION,
@@ -63,6 +68,7 @@ from sensai.core.events import (
     TOOL_STARTED,
     make_event,
 )
+from sensai.core.fewshots import FewShots
 from sensai.core.questions import (
     ASK_SPEC,
     ASK_TOOL,
@@ -158,6 +164,10 @@ class AgentRuntime:
         self._model_name = model_name
         self.system_prompt = system_prompt
         self.prompt_version: str | None = None
+        self.persona: str | None = None  # A5, recorded in run.started
+        self.tool_risks: frozenset[str] | None = None  # A5: risk levels offered, None = all
+        self.fewshots: FewShots | None = None
+        self.recall: Callable[[str], str | None] | None = None  # M3 project memory
         self.entry_hooks: list[Hook] = []
         self.exit_hooks: list[Hook] = []
         self.result_hooks: list[ResultHook] = []
@@ -175,6 +185,7 @@ class AgentRuntime:
             session_id=session_id,
             model=self._model_name,
             prompt_version=self.prompt_version,
+            persona=self.persona,
         )
         try:
             answer = await self._run_and_save(run_id, session_id, user_text, state)
@@ -212,6 +223,13 @@ class AgentRuntime:
 
     def _build_context(self, ctx: RunContext, state: _RunState) -> None:
         prefix = [Message("system", self.system_prompt)] if self.system_prompt else []
+        memory = self.recall(ctx.user_text) if self.recall else None
+        if memory:
+            prefix.append(Message("system", memory))
+        examples = self.fewshots.select(ctx.user_text) if self.fewshots else []
+        if examples:
+            self._emit(PROMPT_EXAMPLES, ctx.run_id, examples=[example.id for example in examples])
+        prefix += [message for example in examples for message in example.messages()]
         user_message = Message("user", ctx.user_text)
         history = self._deps.store.history(ctx.session_id)
         ctx.messages = [*prefix, *history, user_message]
@@ -266,8 +284,15 @@ class AgentRuntime:
             self._emit(type_, ctx.run_id, step=state.steps, **payload)
 
     def _tool_specs(self) -> list[ToolSpec]:
-        specs = self._deps.registry.specs()
+        specs = [
+            ToolSpec(tool.name, tool.description, tool.parameters)
+            for tool in self._deps.registry.tools()
+            if self._risk_allowed(tool)
+        ]
         return [*specs, ASK_SPEC] if self._questions is not None else specs
+
+    def _risk_allowed(self, tool: Tool) -> bool:
+        return self.tool_risks is None or tool.risk in self.tool_risks
 
     async def _stream_model(
         self, ctx: RunContext, state: _RunState, specs: list[ToolSpec] | None
@@ -334,6 +359,9 @@ class AgentRuntime:
         if tool is None:
             self._emit_tool(TOOL_FAILED, ctx, call_id, call.name, error="unknown tool")
             return _error(f"Unknown tool: {call.name}")
+        if not self._risk_allowed(tool):
+            self._emit_tool(TOOL_FAILED, ctx, call_id, tool.name, error="not allowed")
+            return _error(f"{tool.name} is not available to the {self.persona} persona.")
         return await self._run_allowed(ctx, call_id, tool, call)
 
     async def _run_allowed(
