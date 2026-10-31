@@ -50,7 +50,7 @@ persona = "dev"
 # records closest to the message are sent to the model; 0 sends none.
 # Context budget (M2): the context size is shown after each turn. Once it reaches compress_at of
 # [model] num_ctx, the older turns are replaced by a summary (one extra model call) and the last
-# keep_turns turns are kept as they are.
+# keep_turns turns are kept as they are. compress turns M2 on or off, apart from M3.
 enabled = true
 recall = 8
 compress = true

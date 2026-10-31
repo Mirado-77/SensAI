@@ -74,7 +74,8 @@ class PromptsConfig(_Section):
 class MemoryConfig(_Section):
     """Project memory (M3): facts saved by the model, `recall` of them sent at each turn.
     Context budget (M2): old turns are summarized once the context reaches `compress_at` of
-    the model window (`[model] num_ctx`); the last `keep_turns` turns are kept as they are."""
+    the model window (`[model] num_ctx`); the last `keep_turns` turns are kept as they are.
+    `enabled` turns M3 on or off, `compress` turns M2 on or off."""
 
     enabled: bool
     recall: int = Field(ge=0, le=50)
