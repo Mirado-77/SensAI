@@ -14,6 +14,7 @@ from sensai.core.personas import load_persona
 from sensai.core.prompts import load_version
 from sensai.core.runtime import AgentRuntime, RuntimeDeps
 from sensai.memory import artifact_note_for, artifact_tools, memory_recall, memory_tools
+from sensai.memory.budget import install_memory
 from sensai.memory.cache import SemanticCache, install_cache, semantic_cache
 from sensai.memory.sqlite_store import SqliteSessionStore
 from sensai.model.ollama import OllamaGateway
@@ -72,7 +73,12 @@ async def open_chat(
         deps = RuntimeDeps(
             gateway=gateway
             or OllamaGateway(
-                model.host, model.name, model.timeout_s, model.temperature, model.think
+                model.host,
+                model.name,
+                model.timeout_s,
+                model.temperature,
+                model.think,
+                model.num_ctx,
             ),
             store=store,
             sink=sink,
@@ -95,6 +101,7 @@ async def open_chat(
         runtime.recall = memory_recall(config, connection)
         runtime.artifact_note = artifact_note_for(config, connection)
         install_guards(runtime, config.guards, read_env_file(config.guards.env_file))
+        install_memory(runtime, config.memory, model.num_ctx, store, deps.gateway)
         cache = semantic_cache(config, connection)
         if cache is not None:
             install_cache(runtime, cache, store, registry, model.name)

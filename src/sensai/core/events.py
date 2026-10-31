@@ -31,6 +31,9 @@ AGENTS_VERDICT = "agents.verdict"
 ARTIFACT_PATCHED = "artifact.patched"
 CACHE_HIT = "cache.hit"
 CACHE_STORED = "cache.stored"
+MEMORY_BUDGET = "memory.budget"
+MEMORY_COMPRESSED = "memory.compressed"
+MEMORY_SKIPPED = "memory.skipped"
 
 EVENT_TYPES = frozenset(
     {
@@ -61,16 +64,14 @@ EVENT_TYPES = frozenset(
         ARTIFACT_PATCHED,
         CACHE_HIT,
         CACHE_STORED,
-    }
-)
-
-MEMORY_COMPRESSED = "memory.compressed"
-
-RESERVED_EVENT_TYPES = frozenset(
-    {
+        MEMORY_BUDGET,
         MEMORY_COMPRESSED,
+        MEMORY_SKIPPED,
     }
 )
+
+# Declared ahead of the feature that emits them; none left since M2 emits memory.compressed.
+RESERVED_EVENT_TYPES: frozenset[str] = frozenset()
 
 ALL_EVENT_TYPES = EVENT_TYPES | RESERVED_EVENT_TYPES
 

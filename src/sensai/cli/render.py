@@ -10,6 +10,9 @@ from sensai.core.events import (
     APPROVAL_REQUESTED,
     APPROVAL_RESOLVED,
     CACHE_HIT,
+    MEMORY_BUDGET,
+    MEMORY_COMPRESSED,
+    MEMORY_SKIPPED,
     MODEL_CHUNK,
     MODEL_USAGE,
     QUESTION_ANSWERED,
@@ -47,11 +50,15 @@ class ConsoleRenderer:
         self._status: Status | None = None
         self._streaming = False
         self._tokens = [0, 0]
+        self._budget: dict[str, Any] | None = None
         self._handlers = {
             RUN_STARTED: self._run_started,
             CACHE_HIT: self._cache_hit,
             MODEL_CHUNK: self._chunk,
             MODEL_USAGE: self._usage,
+            MEMORY_COMPRESSED: self._memory_compressed,
+            MEMORY_BUDGET: self._memory_budget,
+            MEMORY_SKIPPED: self._memory_skipped,
             REACT_PLAN: self._react_plan,
             REACT_ACTION: self._react_action,
             QUESTION_REQUESTED: self._approval_requested,
@@ -73,6 +80,7 @@ class ConsoleRenderer:
 
     def _run_started(self, payload: dict[str, Any]) -> None:
         self._tokens = [0, 0]
+        self._budget = None
         self._streaming = False
         self._start_status()
 
@@ -93,6 +101,23 @@ class ConsoleRenderer:
     def _usage(self, payload: dict[str, Any]) -> None:
         self._tokens[0] += payload["prompt_tokens"]
         self._tokens[1] += payload["completion_tokens"]
+
+    def _memory_compressed(self, payload: dict[str, Any]) -> None:
+        self._pause()
+        self._dim(
+            f"memory> summarized {payload['summarized']} old messages"
+            f" (~{payload['before']} -> ~{payload['after']} tokens)"
+        )
+        self._start_status()
+
+    def _memory_skipped(self, payload: dict[str, Any]) -> None:
+        self._pause()
+        message = f"memory> summary skipped, the turn keeps the full history: {payload['reason']}"
+        self._console.print(Text(message, style="yellow"))
+        self._start_status()
+
+    def _memory_budget(self, payload: dict[str, Any]) -> None:
+        self._budget = payload
 
     def _react_plan(self, payload: dict[str, Any]) -> None:
         if not payload["steps"]:
@@ -130,9 +155,16 @@ class ConsoleRenderer:
 
     def _run_completed(self, payload: dict[str, Any]) -> None:
         self._pause()
+        line = []
         if any(self._tokens):
             prompt, completion = self._tokens
-            self._dim(f"{prompt + completion} tokens (prompt {prompt}, completion {completion})")
+            line.append(f"{prompt + completion} tokens (prompt {prompt}, completion {completion})")
+        if self._budget is not None:
+            used, limit = self._budget["used"], self._budget["limit"]
+            about = "" if self._budget.get("counted") else "~"
+            line.append(f"context {about}{used}/{limit} ({used * 100 // limit}%)")
+        if line:
+            self._dim(" | ".join(line))
 
     def _run_cancelled(self, payload: dict[str, Any]) -> None:
         self._pause()

@@ -121,6 +121,7 @@ class RunContext:
     answer: str = ""
     notices: list[tuple[str, dict[str, Any]]] = field(default_factory=list)
     tool_errors: int = 0  # tool results of this turn that were errors
+    prompt_tokens: int = 0  # prompt size of the last model call, as counted by Ollama (M2)
 
 
 Hook = Callable[[RunContext], Awaitable[None]]
@@ -250,7 +251,7 @@ class AgentRuntime:
     async def _plan(self, ctx: RunContext, state: _RunState) -> None:
         """Ask for a plan and give it to the model. A plan that never conforms is skipped."""
         assert self._react is not None
-        names = [spec.name for spec in self._tool_specs()]
+        names = [spec.name for spec in self.tool_specs()]
         try:
             plan = await make_plan(
                 self._deps.gateway,
@@ -271,7 +272,7 @@ class AgentRuntime:
 
     async def _model_loop(self, ctx: RunContext, state: _RunState) -> Message:
         """Call the model until it answers without asking for a tool."""
-        specs = self._tool_specs() or None
+        specs = self.tool_specs() or None
         reminded = False
         while True:
             self._count_step(state)
@@ -295,7 +296,8 @@ class AgentRuntime:
         if self._react is not None:
             self._emit(type_, ctx.run_id, step=state.steps, **payload)
 
-    def _tool_specs(self) -> list[ToolSpec]:
+    def tool_specs(self) -> list[ToolSpec]:
+        """The tools offered to the model: those allowed by the persona (A5), plus `ask_user`."""
         specs = [
             ToolSpec(tool.name, tool.description, tool.parameters)
             for tool in self._deps.registry.tools()
@@ -334,6 +336,7 @@ class AgentRuntime:
 
     def _on_usage(self, ctx: RunContext, state: _RunState, usage: Usage) -> None:
         state.tokens += usage.prompt_tokens + usage.completion_tokens
+        ctx.prompt_tokens = usage.prompt_tokens
         self._emit(
             MODEL_USAGE,
             ctx.run_id,

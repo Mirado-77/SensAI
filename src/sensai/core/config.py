@@ -33,6 +33,7 @@ class ModelConfig(_Section):
     timeout_s: float = Field(gt=0)
     think: bool = False  # hidden reasoning of thinking models; off, it would eat the answer budget
     temperature: float = Field(default=0.5, ge=0.0, le=1.0)
+    num_ctx: int = Field(gt=0)
 
 
 class RuntimeConfig(_Section):
@@ -79,10 +80,16 @@ class AgentsConfig(_Section):
 
 
 class MemoryConfig(_Section):
-    """Project memory (M3): facts saved by the model, `recall` of them sent at each turn."""
+    """Project memory (M3): facts saved by the model, `recall` of them sent at each turn.
+    Context budget (M2): old turns are summarized once the context reaches `compress_at` of
+    the model window (`[model] num_ctx`); the last `keep_turns` turns are kept as they are.
+    `enabled` turns M3 on or off, `compress` turns M2 on or off."""
 
     enabled: bool
     recall: int = Field(ge=0, le=50)
+    compress: bool
+    compress_at: float = Field(gt=0, le=1)
+    keep_turns: int = Field(gt=0)
 
 
 class CacheConfig(_Section):

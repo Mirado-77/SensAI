@@ -74,11 +74,12 @@ def test_initial_vocabulary_is_complete():
         "question.requested",
         "question.answered",
         "artifact.patched",
+        "memory.compressed",
+        "memory.budget",
+        "memory.skipped",
     }
 
-    assert RESERVED_EVENT_TYPES == {
-        "memory.compressed",
-    }
+    assert RESERVED_EVENT_TYPES == set()
     assert ALL_EVENT_TYPES == EVENT_TYPES | RESERVED_EVENT_TYPES
 
 

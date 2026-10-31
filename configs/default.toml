@@ -8,6 +8,7 @@ host = "http://localhost:11434"
 timeout_s = 120  # maximum time without a response from Ollama
 think = false  # hidden reasoning of thinking models (qwen3): off by default, it can empty the answer
 temperature = 0.5
+num_ctx = 8192  # context window sent to Ollama (options.num_ctx); the M2 budget is based on it
 
 [runtime]
 # Limits of one AgentRuntime turn.
@@ -65,8 +66,14 @@ ttl_hours = 24
 # Project memory (M3): the model saves conventions, decisions, facts and relations in the
 # database (each change approved by the user). At every turn the conventions and the `recall`
 # records closest to the message are sent to the model; 0 sends none.
+# Context budget (M2): the context size is shown after each turn. Once it reaches compress_at of
+# [model] num_ctx, the older turns are replaced by a summary (one extra model call) and the last
+# keep_turns turns are kept as they are. compress turns M2 on or off, apart from M3.
 enabled = true
 recall = 8
+compress = true
+compress_at = 0.75
+keep_turns = 2
 
 [storage]
 db_path = "~/.sensai/sensai.db"
