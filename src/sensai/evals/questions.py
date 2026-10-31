@@ -63,8 +63,9 @@ async def answer_questions(
         config.model.host,
         config.model.name,
         config.model.timeout_s,
-        config.model.think,
-        config.model.temperature,
+        temperature=config.model.temperature,
+        think=config.model.think,
+        num_ctx=config.model.num_ctx,
     )
     version = load_version(config.prompts.system) if config.prompts.system else None
     fewshots = fewshots_from(config.prompts.examples)

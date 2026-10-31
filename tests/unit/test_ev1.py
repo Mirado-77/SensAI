@@ -164,3 +164,21 @@ def test_markdown_report_lists_version_scores_and_ungraded_answers():
 def test_main_exits_2_on_unknown_prompt_version(tmp_path, capsys):
     assert ev1.main(["--questions", str(CORPUS), "--prompt", "absente"]) == 2
     assert "absente" in capsys.readouterr().err
+
+
+async def test_the_agent_gateway_gets_the_temperature_and_think_of_the_config(monkeypatch):
+    seen = {}
+
+    class Stop(Exception):
+        pass
+
+    def gateway(host, name, timeout_s, **kwargs):
+        seen.update(kwargs)
+        raise Stop
+
+    monkeypatch.setattr("sensai.evals.questions.OllamaGateway", gateway)
+    with pytest.raises(Stop):
+        await answer_questions([], CONFIG)
+
+    assert seen["temperature"] == CONFIG.model.temperature
+    assert seen["think"] is CONFIG.model.think
