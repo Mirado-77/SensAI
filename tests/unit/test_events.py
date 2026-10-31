@@ -76,6 +76,7 @@ def test_initial_vocabulary_is_complete():
         "artifact.patched",
         "memory.compressed",
         "memory.budget",
+        "memory.skipped",
     }
 
     assert RESERVED_EVENT_TYPES == set()

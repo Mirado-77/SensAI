@@ -9,10 +9,12 @@ from tests.unit.test_cli import COMPLETED, STARTED, chat_setup, render
 
 from sensai.cli.chat import run_chat
 from sensai.core.config import MemoryConfig, RuntimeConfig
+from sensai.core.errors import ModelConnectionError
 from sensai.core.events import MEMORY_BUDGET, MODEL_USAGE
 from sensai.core.fakes import (
     CollectingEventSink,
     FakeModelGateway,
+    FakeTool,
     FakeUserChannel,
     InMemorySessionStore,
 )
@@ -28,8 +30,8 @@ pytestmark = pytest.mark.feature("M2")
 LONG = "x" * 400  # ~100 estimated tokens
 
 
-def build(*scripts, context_tokens=400, enabled=True):
-    gateway = FakeModelGateway(*scripts)
+def build(*scripts, context_tokens=400, enabled=True, tools=(), gateway=None):
+    gateway = gateway or FakeModelGateway(*scripts)
     store = InMemorySessionStore()
     sink = CollectingEventSink()
     deps = RuntimeDeps(
@@ -37,7 +39,7 @@ def build(*scripts, context_tokens=400, enabled=True):
         store=store,
         sink=sink,
         channel=FakeUserChannel(),
-        registry=ToolRegistry([]),
+        registry=ToolRegistry(list(tools)),
         policy=ApprovalPolicy({"read": "allow", "write": "ask", "exec": "ask"}),
     )
     config = RuntimeConfig(max_steps=8, max_tool_calls=8, timeout_s=5, max_tokens=10_000)
@@ -51,6 +53,17 @@ def fill(store, session_id, *messages):
     parent = None
     for message in messages:
         parent = store.append(session_id, message, parent)
+
+
+def small_turns(count, text=""):
+    return [
+        message
+        for index in range(count)
+        for message in (
+            Message("user", f"user {index} {text}"),
+            Message("assistant", f"assistant {index}"),
+        )
+    ]
 
 
 def payloads(sink, type_):
@@ -134,6 +147,58 @@ async def test_too_few_turns_or_an_empty_summary_leave_the_history_as_is():
     assert "memory.compressed" not in sink.types()
 
 
+async def test_the_tool_schemas_count_in_the_budget():
+    # The history alone is far below the threshold; the schema sent with every call is not.
+    tool = FakeTool(description="d" * 800)
+    runtime, gateway, store, sink, session_id = build(
+        [Chunk("summary")], [Chunk("ok")], tools=[tool]
+    )
+    fill(store, session_id, *small_turns(2))
+    await runtime.run_turn(session_id, "next")
+
+    assert "memory.compressed" in sink.types()
+    assert gateway.calls[0].tools is None  # the summary call
+
+
+async def test_the_size_counted_by_ollama_triggers_the_summary():
+    runtime, gateway, store, sink, session_id = build(
+        [Chunk("b"), Usage(300, 5)], [Chunk("summary")], [Chunk("ok")]
+    )
+    fill(store, session_id, *small_turns(1))
+    await runtime.run_turn(session_id, "second")  # one old turn: nothing to summarize yet
+    [budget] = payloads(sink, MEMORY_BUDGET)
+    assert budget["counted"] is True and budget["used"] >= 300
+
+    await runtime.run_turn(session_id, "third")  # the estimate alone is ~20 tokens
+    assert "memory.compressed" in sink.types()
+
+
+class SummaryFails:
+    """The first call (the summary) fails, the next ones answer."""
+
+    def __init__(self):
+        self.calls = 0
+
+    async def stream_chat(self, messages, tools=None, schema=None):
+        self.calls += 1
+        if self.calls == 1:
+            raise ModelConnectionError("Ollama est injoignable")
+        yield Chunk("answer")
+
+
+async def test_a_failed_summary_keeps_the_history_and_the_turn_goes_on():
+    gateway = SummaryFails()
+    runtime, _, store, sink, session_id = build(gateway=gateway)
+    fill(store, session_id, *small_turns(2, LONG))
+    result = await runtime.run_turn(session_id, "next")
+
+    assert (result.status, result.answer) == ("completed", "answer")
+    [skipped] = payloads(sink, "memory.skipped")
+    assert "injoignable" in skipped["reason"]
+    assert "memory.compressed" not in sink.types()
+    assert store.history(session_id)[0].content == "user 0 " + LONG
+
+
 async def test_disabled_memory_adds_no_hook():
     runtime, *_ = build(enabled=False)
     assert runtime.entry_hooks == [] and runtime.exit_hooks == []
@@ -151,6 +216,19 @@ def test_renderer_shows_the_budget_and_the_compression():
     )
     assert "memory> summarized 4 old messages (~900 -> ~300 tokens)\n" in out
     assert out.endswith("7 tokens (prompt 5, completion 2) | context ~2048/8192 (25%)\n")
+
+
+def test_renderer_shows_a_counted_budget_and_a_skipped_summary():
+    out, _ = render(
+        [
+            STARTED,
+            ("memory.skipped", {"reason": "Ollama est injoignable"}),
+            (MEMORY_BUDGET, {"used": 4096, "limit": 8192, "counted": True}),
+            COMPLETED,
+        ]
+    )
+    assert "memory> summary skipped, the turn keeps the full history: Ollama est" in out
+    assert out.endswith("context 4096/8192 (50%)\n")
 
 
 async def test_the_chat_shows_the_budget_after_each_turn(tmp_path):

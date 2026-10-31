@@ -8,11 +8,13 @@ the summary call (only their tool name): they are untrusted and the summary beco
 message.
 """
 
-from dataclasses import replace
+import json
+from dataclasses import asdict, replace
 
 from sensai.core.config import MemoryConfig
 from sensai.core.contracts import ModelGateway, SessionStore
-from sensai.core.events import MEMORY_BUDGET, MEMORY_COMPRESSED, MODEL_USAGE
+from sensai.core.errors import ModelError
+from sensai.core.events import MEMORY_BUDGET, MEMORY_COMPRESSED, MEMORY_SKIPPED, MODEL_USAGE
 from sensai.core.runtime import AgentRuntime, Hook, RunContext
 from sensai.core.types import Chunk, Message, Usage
 
@@ -31,6 +33,12 @@ def estimate_tokens(messages: list[Message]) -> int:
     return sum(len(m.content) // CHARS_PER_TOKEN + 4 for m in messages)
 
 
+def tool_tokens(runtime: AgentRuntime) -> int:
+    """The tool schemas sent with every call: about 2,000 tokens for the chat's tools."""
+    specs = [asdict(spec) for spec in runtime.tool_specs()]
+    return len(json.dumps(specs)) // CHARS_PER_TOKEN if specs else 0
+
+
 def install_memory(
     runtime: AgentRuntime,
     config: MemoryConfig,
@@ -41,14 +49,26 @@ def install_memory(
     """Register the budget and the compression on `runtime`, unless `[memory] compress` is off."""
     if not config.compress:
         return
-    runtime.entry_hooks.append(compress_history(runtime, config, context_tokens, store, gateway))
-    runtime.exit_hooks.append(report_budget(runtime, context_tokens))
+    counted: dict[str, int] = {}
+    runtime.entry_hooks.append(
+        compress_history(runtime, config, context_tokens, store, gateway, counted)
+    )
+    runtime.exit_hooks.append(report_budget(runtime, context_tokens, counted))
 
 
-def report_budget(runtime: AgentRuntime, context_tokens: int) -> Hook:
+def report_budget(runtime: AgentRuntime, context_tokens: int, counted: dict[str, int]) -> Hook:
+    """`used` is the prompt Ollama counted on the last call plus the answer; without a count (an
+    answer from the cache, a model that reports no usage) it is estimated."""
+
     async def hook(ctx: RunContext) -> None:
-        used = estimate_tokens([*ctx.messages, Message("assistant", ctx.answer)])
-        ctx.notices.append((MEMORY_BUDGET, {"used": used, "limit": context_tokens}))
+        answer = estimate_tokens([Message("assistant", ctx.answer)])
+        if ctx.prompt_tokens:
+            used = ctx.prompt_tokens + answer
+        else:
+            used = estimate_tokens(ctx.messages) + tool_tokens(runtime) + answer
+        counted[ctx.session_id] = used
+        payload = {"used": used, "limit": context_tokens, "counted": bool(ctx.prompt_tokens)}
+        ctx.notices.append((MEMORY_BUDGET, payload))
 
     return hook
 
@@ -59,11 +79,17 @@ def compress_history(
     context_tokens: int,
     store: SessionStore,
     gateway: ModelGateway,
+    counted: dict[str, int],
 ) -> Hook:
+    """The context of the coming call is the larger of the size counted at the end of the last
+    turn and an estimate that includes the tool schemas, plus the new message."""
+
     async def hook(ctx: RunContext) -> None:
         history = store.history(ctx.session_id)
         prefix = [Message("system", runtime.system_prompt)] if runtime.system_prompt else []
-        before = estimate_tokens([*prefix, *history, Message("user", ctx.user_text)])
+        user = estimate_tokens([Message("user", ctx.user_text)])
+        estimated = estimate_tokens([*prefix, *history]) + tool_tokens(runtime) + user
+        before = max(estimated, counted.get(ctx.session_id, 0) + user)
         if before < config.compress_at * context_tokens:
             return
         users = [i for i, message in enumerate(history) if message.role == "user"]
@@ -71,13 +97,19 @@ def compress_history(
             return  # nothing old enough to summarize
         cut = users[-config.keep_turns]
         old, recent = history[:cut], history[cut:]
-        summary = await _summarize(gateway, old, ctx)
+        try:
+            summary = await _summarize(gateway, old, ctx)
+        except ModelError as exc:
+            # The summary only saves room: the turn goes on with the full history.
+            ctx.notices.append((MEMORY_SKIPPED, {"reason": str(exc)}))
+            return
         if not summary:
             return
         parent = store.append(ctx.session_id, Message("system", SUMMARY_PREFIX + summary), None)
         for message in recent:
             parent = store.append(ctx.session_id, replace(message, id=None), parent)
         after = before - estimate_tokens(old) + estimate_tokens([Message("system", summary)])
+        counted[ctx.session_id] = after - user
         payload = {"summarized": len(old), "kept": len(recent), "before": before, "after": after}
         ctx.notices.append((MEMORY_COMPRESSED, payload))
 

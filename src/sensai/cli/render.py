@@ -12,6 +12,7 @@ from sensai.core.events import (
     CACHE_HIT,
     MEMORY_BUDGET,
     MEMORY_COMPRESSED,
+    MEMORY_SKIPPED,
     MODEL_CHUNK,
     MODEL_USAGE,
     QUESTION_ANSWERED,
@@ -57,6 +58,7 @@ class ConsoleRenderer:
             MODEL_USAGE: self._usage,
             MEMORY_COMPRESSED: self._memory_compressed,
             MEMORY_BUDGET: self._memory_budget,
+            MEMORY_SKIPPED: self._memory_skipped,
             REACT_PLAN: self._react_plan,
             REACT_ACTION: self._react_action,
             QUESTION_REQUESTED: self._approval_requested,
@@ -108,6 +110,12 @@ class ConsoleRenderer:
         )
         self._start_status()
 
+    def _memory_skipped(self, payload: dict[str, Any]) -> None:
+        self._pause()
+        message = f"memory> summary skipped, the turn keeps the full history: {payload['reason']}"
+        self._console.print(Text(message, style="yellow"))
+        self._start_status()
+
     def _memory_budget(self, payload: dict[str, Any]) -> None:
         self._budget = payload
 
@@ -153,7 +161,8 @@ class ConsoleRenderer:
             line.append(f"{prompt + completion} tokens (prompt {prompt}, completion {completion})")
         if self._budget is not None:
             used, limit = self._budget["used"], self._budget["limit"]
-            line.append(f"context ~{used}/{limit} ({used * 100 // limit}%)")
+            about = "" if self._budget.get("counted") else "~"
+            line.append(f"context {about}{used}/{limit} ({used * 100 // limit}%)")
         if line:
             self._dim(" | ".join(line))
 

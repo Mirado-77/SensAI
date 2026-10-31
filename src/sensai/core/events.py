@@ -33,6 +33,7 @@ CACHE_HIT = "cache.hit"
 CACHE_STORED = "cache.stored"
 MEMORY_BUDGET = "memory.budget"
 MEMORY_COMPRESSED = "memory.compressed"
+MEMORY_SKIPPED = "memory.skipped"
 
 EVENT_TYPES = frozenset(
     {
@@ -65,6 +66,7 @@ EVENT_TYPES = frozenset(
         CACHE_STORED,
         MEMORY_BUDGET,
         MEMORY_COMPRESSED,
+        MEMORY_SKIPPED,
     }
 )
 
