@@ -9,6 +9,7 @@ Every call to the model goes through the Ollama HTTP API, with no LLM framework.
 - [Ollama](https://ollama.com), installed locally or started with `make ollama` (requires Docker)
 - At least one model pulled in Ollama, for example `ollama pull gemma4:e2b`
 - Optional: Docker, for the `run_command` tool (T2); build its image with `make sandbox-image`
+- Optional: Node.js 20 or newer, to build the web UI (X1) with `make web`
 - Optional: WeasyPrint, for the PDF export (X3): `.venv/bin/pip install -e '.[pdf]'` (it needs Pango, present on most Linux desktops)
 
 ## Installation
@@ -289,6 +290,26 @@ curl http://127.0.0.1:8000/api/health  # {"name": "sensai"}
   `{id, answer}` and `persona` `{name}`.
 - The built web UI (`[api] web_dir`, `web/dist`) is served at `/` once it exists.
 
+### Web UI: `sensai start:web`
+
+```bash
+make web            # once, and after each change in web/: builds web/dist
+sensai start:web    # opens http://127.0.0.1:8000/, starting the API until Ctrl-C if needed
+```
+
+If `sensai start:api` already runs, `sensai start:web` only opens the browser. The page shows
+the sessions on the left; the model, a persona selector (A5), the token meter of the turn
+(against `[runtime] max_tokens`, with the context and session totals on hover) and the
+configuration panel at the top; the conversation streamed as it is written, the ReAct plan and
+one card per tool call in the middle. A write or a command opens a dialog with its diff (A3), a
+question of the model (X4) shows its options above the input, the stop button interrupts the
+turn and keeps the partial text (X2), and the fork button of a message continues in a new
+session from it. A failed turn stays on screen with its error, as it is not saved. On a machine
+where Ollama runs on the CPU, raise `[model] timeout_s` and `[runtime] timeout_s`: approvals
+count in the turn time. `make web-dev` serves the page with hot reload on http://127.0.0.1:5173/,
+forwarding `/api` and `/ws` to a running `sensai start:api`; `make web-test` runs the Vitest
+tests, the type check and ESLint.
+
 ### Semantic cache
 
 The first message of a session is embedded with `[rag] embed_model`. When a question already
@@ -482,6 +503,7 @@ file, one migration per pull request. Migrations are applied when the database i
 - `src/sensai/db/`: connection and migrations.
 - `src/sensai/assembly.py`: builds the runtime (tools, MCP servers, prompt, hooks), shared by the CLI and the API.
 - `src/sensai/api/`: FastAPI app (X1): REST routes, session WebSocket, event sink and approval channel of a client.
+- `web/`: web UI (X1): Vite, React, TypeScript, shadcn/ui; `src/lib/reducer.ts` turns the WebSocket frames into the page state.
 - `src/sensai/cli/`: chat loop, console rendering, approval prompt.
 - `configs/`: TOML configuration (`default.toml`, profiles, personas, policies) and example JSON Schemas (`schemas/`).
 - `docker/ollama/`: Dockerfile and launch script for the Ollama server.
@@ -519,7 +541,7 @@ file, one migration per pull request. Migrations are applied when the database i
 | EV4 | Attack corpus in `evals/attacks/`: file injection, tool injection, paths outside the roots, secret leak, dangerous command; `make eval` writes a JSON and a Markdown report in `evals/reports/` | done ([user stories](docs/user-stories/EV4.md)) |
 | EV2 | Guards: user messages and tool outputs refused when they try to override the instructions, `.env` values and common key formats redacted from tool outputs and answers, emails and phone numbers masked as `[EMAIL]` and `[PHONE]` (`[guards] pii`), `[guards]` config | done ([user stories](docs/user-stories/EV2.md)) |
 | T3 | Web search through a local SearXNG (`make searxng`, no API key, no quota): `web_search` with `allowed_domains` / `blocked_domains`, results marked untrusted, `[web]` config | done ([user stories](docs/user-stories/T3.md)) |
-| X1 | Web UI: `sensai start:api` serves the REST routes and the session WebSocket (streamed events, approvals, questions, cancel, persona switch, fork) with the same runtime as the CLI | in progress: API done, web UI to come |
+| X1 | Web UI: `sensai start:api` serves the REST routes and the session WebSocket with the same runtime as the CLI, `sensai start:web` opens the React page: streamed answers, tool cards, token meter, persona switch, approval dialog with the diff, questions, stop and fork, read-only configuration | done ([user stories](docs/user-stories/X1.md)) |
 
 Foundations already in place for the next features: the tool-call path of the agent loop
 (registry, approval by risk level, untrusted content marking), the event journal, and the
