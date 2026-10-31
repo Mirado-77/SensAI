@@ -1,12 +1,25 @@
-"""The project memory in the chat (M3): `/memory` lists it, `/memory forget <id>` deletes one."""
+"""The project memory in the chat (M3): `/memory` lists it, `/memory forget <id>` deletes one.
+`/cache clear` empties the semantic cache (A6)."""
 
 from rich.text import Text
 
 from sensai.cli.terminal import Terminal
+from sensai.memory.cache import SemanticCache
 from sensai.memory.facts import FactStore
 
 MEMORY_COMMAND = "/memory"
 USAGE = "Usage : /memory, ou /memory forget <id>"
+CACHE_COMMAND = "/cache"
+CACHE_USAGE = "Usage : /cache clear"
+
+
+def run_cache_command(cache: SemanticCache | None, terminal: Terminal, text: str) -> None:
+    if cache is None:
+        terminal.errors.print(Text("Cache sémantique désactivé ([cache] enabled).", "yellow"))
+    elif text.split() != [CACHE_COMMAND, "clear"]:
+        terminal.errors.print(Text(CACHE_USAGE, "yellow"))
+    else:
+        terminal.console.print(Text(f"Cache vidé : {cache.clear()} réponse(s) oubliée(s).", "dim"))
 
 
 def run_memory_command(facts: FactStore | None, terminal: Terminal, text: str) -> None:

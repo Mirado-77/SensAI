@@ -30,11 +30,13 @@ Event payloads (all events also carry `run_id`):
 - question.requested, question.answered: see `sensai.core.questions`
 - guard.blocked: stage ("entry" or "tool"), reason, and tool for a tool output
 - guard.redacted: stage ("answer" or "tool"), count, and tool for a tool output
+- cache.hit, cache.stored: see `sensai.memory.cache`
 - run.completed: session_id, steps, tool_calls
 - run.cancelled: session_id, partial
 - run.failed: session_id, error_type, error
 
 `recall` (M3) adds the project memory closest to the message as a system message, not saved.
+`artifact_note` (M4) adds the state document of the session to a system message, not saved.
 """
 
 import asyncio
@@ -109,7 +111,8 @@ class RunResult:
 
 @dataclass
 class RunContext:
-    """What hooks see and may change. `answer` is only set once the model has answered."""
+    """What hooks see and may change. `answer` is set once the model has answered, or by an entry
+    hook that answers instead of the model (A6), which then shows it as one model.chunk."""
 
     run_id: str
     session_id: str
@@ -117,6 +120,7 @@ class RunContext:
     messages: list[Message] = field(default_factory=list)
     answer: str = ""
     notices: list[tuple[str, dict[str, Any]]] = field(default_factory=list)
+    tool_errors: int = 0  # tool results of this turn that were errors
 
 
 Hook = Callable[[RunContext], Awaitable[None]]
@@ -168,6 +172,7 @@ class AgentRuntime:
         self.tool_risks: frozenset[str] | None = None  # A5: risk levels offered, None = all
         self.fewshots: FewShots | None = None
         self.recall: Callable[[str], str | None] | None = None  # M3 project memory
+        self.artifact_note: Callable[[str], str | None] | None = None  # M4 state document
         self.entry_hooks: list[Hook] = []
         self.exit_hooks: list[Hook] = []
         self.result_hooks: list[ResultHook] = []
@@ -213,10 +218,14 @@ class AgentRuntime:
         ctx = RunContext(run_id, session_id, user_text)
         await self._run_hooks(self.entry_hooks, ctx)
         self._build_context(ctx, state)
-        if self._react is not None:
-            await self._plan(ctx, state)
-        assistant = await self._model_loop(ctx, state)
-        ctx.answer = assistant.content
+        if ctx.answer:  # an entry hook answered (A6 semantic cache): no model call
+            self._emit(MODEL_CHUNK, ctx.run_id, text=ctx.answer)
+            assistant = Message("assistant", ctx.answer)
+        else:
+            if self._react is not None:
+                await self._plan(ctx, state)
+            assistant = await self._model_loop(ctx, state)
+            ctx.answer = assistant.content
         await self._run_hooks(self.exit_hooks, ctx)
         state.new_messages.append(replace(assistant, content=ctx.answer))
         return ctx.answer
@@ -226,6 +235,9 @@ class AgentRuntime:
         memory = self.recall(ctx.user_text) if self.recall else None
         if memory:
             prefix.append(Message("system", memory))
+        artifact_note = self.artifact_note(ctx.session_id) if self.artifact_note else None
+        if artifact_note:
+            prefix.append(Message("system", artifact_note))
         examples = self.fewshots.select(ctx.user_text) if self.fewshots else []
         if examples:
             self._emit(PROMPT_EXAMPLES, ctx.run_id, examples=[example.id for example in examples])
@@ -347,7 +359,9 @@ class AgentRuntime:
         results = []
         for call_id, call in zip(call_ids, assistant.tool_calls, strict=True):
             self._count_tool_call(state)
-            results.append((call, await self._run_tool(ctx, state, call_id, call)))
+            result = await self._run_tool(ctx, state, call_id, call)
+            ctx.tool_errors += result.is_error
+            results.append((call, result))
         return results
 
     async def _run_tool(

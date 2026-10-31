@@ -130,3 +130,14 @@ async def test_disabled_guards_let_everything_through():
     assert SECRET in result.answer
     assert not [t for t in types(sink) if t.startswith("guard.")]
     assert len(gateway.calls) == 1
+
+
+async def test_emails_and_phone_numbers_in_the_answer_are_masked():
+    answer = "Écris à jane.doe@example.com ou appelle le 06 12 34 56 78."
+    runtime, _, store, sink, session_id = build([Chunk(answer)])
+    result = await runtime.run_turn(session_id, "Qui contacter ?")
+
+    assert result.answer == "Écris à [EMAIL] ou appelle le [PHONE]."
+    assert store.history(session_id)[-1].content == result.answer
+    redacted = events_of(sink, "guard.redacted")
+    assert [(e.payload["stage"], e.payload["count"]) for e in redacted] == [("answer", 2)]

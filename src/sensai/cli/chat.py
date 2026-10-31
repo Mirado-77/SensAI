@@ -4,46 +4,34 @@ import asyncio
 import signal
 import sqlite3
 from collections.abc import Awaitable
+from contextlib import AsyncExitStack
 from datetime import datetime
 from typing import Any
 
 from rich.text import Text
 
+from sensai.assembly import open_chat
+from sensai.cli.artifact import DOC_COMMAND, StateDocument, print_document
 from sensai.cli.channel import CliUserChannel
 from sensai.cli.fork import FORK_COMMAND, HISTORY_COMMAND, print_history, run_fork_command
-from sensai.cli.memory import MEMORY_COMMAND, run_memory_command
+from sensai.cli.memory import CACHE_COMMAND, MEMORY_COMMAND, run_cache_command, run_memory_command
+from sensai.cli.pair import PAIR_COMMAND, Pair
 from sensai.cli.personas import PERSONA_COMMAND, run_persona_command
-from sensai.cli.profile import (
-    PROFILE_COMMAND,
-    PROFILE_ID,
-    load_profile,
-    profile_prompt,
-    run_profile_command,
-)
+from sensai.cli.profile import PROFILE_COMMAND, PROFILE_ID, run_profile_command
 from sensai.cli.prompts import PROMPT_COMMAND, ChatPrompt, run_prompt_command
 from sensai.cli.render import ConsoleRenderer
 from sensai.cli.terminal import Terminal
 from sensai.core.bus import EventBus
 from sensai.core.config import Config
-from sensai.core.contracts import ModelGateway, Tool
+from sensai.core.contracts import ModelGateway
 from sensai.core.errors import ConfigError, SensaiError
-from sensai.core.fewshots import fewshots_from
-from sensai.core.personas import load_persona
-from sensai.core.prompts import load_version
-from sensai.core.runtime import AgentRuntime, RunResult, RuntimeDeps
+from sensai.core.runtime import AgentRuntime, RunResult
 from sensai.db.connection import connect
-from sensai.memory import memory_recall, memory_tools
-from sensai.memory.budget import install_memory
+from sensai.memory.artifact import ArtifactStore
+from sensai.memory.cache import SemanticCache
 from sensai.memory.facts import FactStore
 from sensai.memory.sqlite_store import SqliteSessionStore
-from sensai.model.ollama import OllamaGateway
 from sensai.observability.journal import SqliteEventJournal
-from sensai.safety.guards import install_guards
-from sensai.safety.policy import ApprovalPolicy
-from sensai.safety.secrets import read_env_file
-from sensai.schedule import schedule_tools
-from sensai.tools import native_tools, sandbox_tools, search_tools, web_tools
-from sensai.tools.mcp.servers import McpServers
 from sensai.tools.registry import ToolRegistry
 
 EXIT_COMMANDS = {"/exit", "/quit"}
@@ -97,6 +85,9 @@ async def chat_loop(
     registry: ToolRegistry | None = None,
     prompt: ChatPrompt | None = None,
     facts: FactStore | None = None,
+    pair: Pair | None = None,
+    document: StateDocument | None = None,
+    cache: SemanticCache | None = None,
 ) -> None:
     """Read lines and run one turn per line, until /exit, Ctrl-D or Ctrl-C at the prompt."""
     while True:
@@ -123,12 +114,22 @@ async def chat_loop(
             prompt = prompt or ChatPrompt(None)
             run_persona_command(prompt, terminal, text)
             prompt.apply(runtime)
+        elif text.split(" ", 1)[0] == PAIR_COMMAND and pair is not None:
+            prompt = prompt or ChatPrompt(None)
+            await pair.run(runtime, prompt, session_id, terminal, text, run_interruptible)
         elif text.split(" ", 1)[0] == MEMORY_COMMAND:
             run_memory_command(facts, terminal, text)
+        elif text.split(" ", 1)[0] == CACHE_COMMAND:
+            run_cache_command(cache, terminal, text)
         elif text == HISTORY_COMMAND:
             print_history(store, terminal, session_id)
+        elif text == DOC_COMMAND:
+            print_document(document, terminal, session_id)
         elif text.split(" ", 1)[0] == FORK_COMMAND:
-            session_id = run_fork_command(store, terminal, session_id, text)
+            forked = run_fork_command(store, terminal, session_id, text)
+            if document is not None:
+                document.fork(session_id, forked)
+            session_id = forked
         elif text:
             await run_interruptible(runtime.run_turn(session_id, text))
 
@@ -160,50 +161,52 @@ async def run_chat(
     `resume` is the id (or id prefix) of a session to continue, LAST_SESSION for the most
     recent one, None for a new session.
     """
-    try:
-        version = load_version(config.prompts.system) if config.prompts.system else None
-        persona = load_persona(config.prompts.persona) if config.prompts.persona else None
-        fewshots = fewshots_from(config.prompts.examples)
-    except ConfigError as exc:
-        terminal.errors.print(Text(f"Erreur : {exc}", style="bold red"))
-        return 2
     connection = _open_database(config, terminal)
     if connection is None:
         return 2
     try:
         store = SqliteSessionStore(connection)
+        sink = EventBus([SqliteEventJournal(connection), ConsoleRenderer(terminal)])
         session_id = _open_session(store, terminal, resume)
         if session_id is None:
             return 2
-        native = _native_tools_or_report(config, terminal)
-        if native is None:
-            return 2
-        native += await _sandbox_tools_or_report(config, terminal)
-        native += search_tools(config, connection)
-        native += web_tools(config)
-        native += schedule_tools(config, connection)
-        native += memory_tools(config, connection)
-        async with McpServers(config.mcp) as mcp:
-            registry = build_registry(native, mcp, terminal)
-            deps = _build_deps(config, terminal, connection, gateway, registry)
-            prompt = ChatPrompt(version, profile_prompt(load_profile(store)), persona)
-            runtime = AgentRuntime(
-                deps,
-                config.runtime,
-                config.model.name,
-                None,
-                react=config.react,
-                max_repairs=config.structured.max_repairs,
-                questions=config.questions,
-            )
-            prompt.apply(runtime)
-            runtime.fewshots = fewshots
-            runtime.recall = memory_recall(config, connection)
-            install_guards(runtime, config.guards, read_env_file(config.guards.env_file))
-            install_memory(runtime, config.memory, config.model.num_ctx, store, deps.gateway)
-            terminal.console.print(Text(_banner(config, registry, prompt), "dim"))
+        async with AsyncExitStack() as stack:
+            try:
+                chat = await stack.enter_async_context(
+                    open_chat(
+                        config,
+                        connection,
+                        sink,
+                        CliUserChannel(terminal),
+                        lambda warning: _warn(terminal, warning),
+                        gateway,
+                    )
+                )
+            except ConfigError as exc:
+                terminal.errors.print(Text(f"Erreur : {exc}", style="bold red"))
+                return 2
+            banner = _banner(config, chat.registry, chat.prompt)
+            terminal.console.print(Text(banner, "dim"), soft_wrap=True)
             facts = FactStore(connection) if config.memory.enabled else None
-            await chat_loop(runtime, session_id, terminal, store, registry, prompt, facts)
+            deps = chat.deps
+            pair = Pair(config.agents, deps.gateway, deps.sink, config.structured.max_repairs)
+            document = (
+                StateDocument(ArtifactStore(connection), config.artifact.sections)
+                if config.artifact.enabled
+                else None
+            )
+            await chat_loop(
+                chat.runtime,
+                session_id,
+                terminal,
+                store,
+                chat.registry,
+                chat.prompt,
+                facts,
+                pair,
+                document,
+                chat.cache,
+            )
         return 0
     finally:
         connection.close()
@@ -244,20 +247,6 @@ def print_sessions(config: Config, terminal: Terminal, limit: int = 20) -> int:
     return 0
 
 
-def build_registry(native: list[Tool], mcp: McpServers, terminal: Terminal) -> ToolRegistry:
-    """Register the native tools, then the MCP tools. A tool that cannot be used is reported."""
-    registry = ToolRegistry(native)
-    warnings = list(mcp.warnings)
-    for tool in mcp.tools:
-        try:
-            registry.register(tool)
-        except ValueError as exc:
-            warnings.append(str(exc))
-    for warning in warnings:
-        terminal.errors.print(Text(f"Attention : {warning}", style="yellow"))
-    return registry
-
-
 def _banner(config: Config, registry: ToolRegistry, prompt: ChatPrompt) -> str:
     tools = f"{len(registry)} tools ({TOOLS_COMMAND})" if len(registry) else "no tools"
     version = prompt.version.label if prompt.version else "none"
@@ -265,8 +254,9 @@ def _banner(config: Config, registry: ToolRegistry, prompt: ChatPrompt) -> str:
         version += f" + {config.prompts.examples} examples"
     persona = prompt.persona.name if prompt.persona else "none"
     return (
-        f"SENSAI | model: {config.model.name} | temperature: {config.model.temperature} | prompt: {version} ({PROMPT_COMMAND})"
-        f" | persona: {persona} ({PERSONA_COMMAND}) | {tools} | /exit or Ctrl-D to quit"
+        f"SENSAI | model: {config.model.name} | temperature: {config.model.temperature}"
+        f" | prompt: {version} ({PROMPT_COMMAND}) | persona: {persona} ({PERSONA_COMMAND})"
+        f" | {tools} | /exit or Ctrl-D to quit"
     )
 
 
@@ -279,38 +269,5 @@ def _open_database(config: Config, terminal: Terminal) -> sqlite3.Connection | N
         return None
 
 
-def _native_tools_or_report(config: Config, terminal: Terminal) -> list[Tool] | None:
-    try:
-        return native_tools(config)
-    except ConfigError as exc:
-        terminal.errors.print(Text(f"Erreur : {exc}", style="bold red"))
-        return None
-
-
-async def _sandbox_tools_or_report(config: Config, terminal: Terminal) -> list[Tool]:
-    tools, reason = await sandbox_tools(config)
-    if reason is not None:
-        message = f"Attention : exécution de commandes désactivée (T2) : {reason}"
-        terminal.errors.print(Text(message, style="yellow"))
-    return tools
-
-
-def _build_deps(
-    config: Config,
-    terminal: Terminal,
-    connection: sqlite3.Connection,
-    gateway: ModelGateway | None,
-    registry: ToolRegistry,
-) -> RuntimeDeps:
-    model = config.model
-    return RuntimeDeps(
-        gateway=gateway
-        or OllamaGateway(
-            model.host, model.name, model.timeout_s, model.temperature, model.think, model.num_ctx
-        ),
-        store=SqliteSessionStore(connection),
-        sink=EventBus([SqliteEventJournal(connection), ConsoleRenderer(terminal)]),
-        channel=CliUserChannel(terminal),
-        registry=registry,
-        policy=ApprovalPolicy.from_config(config.policy),
-    )
+def _warn(terminal: Terminal, warning: str) -> None:
+    terminal.errors.print(Text(f"Attention : {warning}", style="yellow"))

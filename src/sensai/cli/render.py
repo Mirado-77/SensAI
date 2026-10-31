@@ -9,6 +9,7 @@ from sensai.cli.terminal import Terminal
 from sensai.core.events import (
     APPROVAL_REQUESTED,
     APPROVAL_RESOLVED,
+    CACHE_HIT,
     MEMORY_BUDGET,
     MEMORY_COMPRESSED,
     MODEL_CHUNK,
@@ -51,6 +52,7 @@ class ConsoleRenderer:
         self._budget: dict[str, Any] | None = None
         self._handlers = {
             RUN_STARTED: self._run_started,
+            CACHE_HIT: self._cache_hit,
             MODEL_CHUNK: self._chunk,
             MODEL_USAGE: self._usage,
             MEMORY_COMPRESSED: self._memory_compressed,
@@ -79,6 +81,13 @@ class ConsoleRenderer:
         self._budget = None
         self._streaming = False
         self._start_status()
+
+    def _cache_hit(self, payload: dict[str, Any]) -> None:
+        self._pause()
+        self._dim(
+            f"cache> déjà répondu à « {payload['question']} » (similarité {payload['score']:.2f}),"
+            " /cache clear pour l'oublier"
+        )
 
     def _chunk(self, payload: dict[str, Any]) -> None:
         self._stop_status()

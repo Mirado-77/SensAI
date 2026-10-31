@@ -26,8 +26,13 @@ QUESTION_ANSWERED = "question.answered"
 GUARD_BLOCKED = "guard.blocked"
 GUARD_REDACTED = "guard.redacted"
 PROMPT_EXAMPLES = "prompt.examples"
-MEMORY_COMPRESSED = "memory.compressed"
+AGENTS_HANDOFF = "agents.handoff"
+AGENTS_VERDICT = "agents.verdict"
+ARTIFACT_PATCHED = "artifact.patched"
+CACHE_HIT = "cache.hit"
+CACHE_STORED = "cache.stored"
 MEMORY_BUDGET = "memory.budget"
+MEMORY_COMPRESSED = "memory.compressed"
 
 EVENT_TYPES = frozenset(
     {
@@ -53,18 +58,18 @@ EVENT_TYPES = frozenset(
         GUARD_BLOCKED,
         GUARD_REDACTED,
         PROMPT_EXAMPLES,
-        MEMORY_COMPRESSED,
-        MEMORY_BUDGET,
-    }
-)
-
-ARTIFACT_PATCHED = "artifact.patched"
-
-RESERVED_EVENT_TYPES = frozenset(
-    {
+        AGENTS_HANDOFF,
+        AGENTS_VERDICT,
         ARTIFACT_PATCHED,
+        CACHE_HIT,
+        CACHE_STORED,
+        MEMORY_BUDGET,
+        MEMORY_COMPRESSED,
     }
 )
+
+# Declared ahead of the feature that emits them; none left since M2 emits memory.compressed.
+RESERVED_EVENT_TYPES: frozenset[str] = frozenset()
 
 ALL_EVENT_TYPES = EVENT_TYPES | RESERVED_EVENT_TYPES
 

@@ -11,6 +11,10 @@ _KEY_FORMATS = [
     r"AKIA[0-9A-Z]{16}",
     r"gh[pousr]_[A-Za-z0-9]{20,}",
 ]
+# shortcut: emails and phone numbers (international +CC or French 0X XX XX XX XX), not names.
+_EMAIL = r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}"
+_PHONE = r"(?<![\w+])(?:\+\d{1,3}(?:[ .-]?\d){8,12}|0[1-9](?:[ .-]?\d{2}){4})(?!\d)"
+_PII = [(re.compile(_EMAIL), "[EMAIL]"), (re.compile(_PHONE), "[PHONE]")]
 
 
 def read_env_file(env_file: Path) -> dict[str, str]:
@@ -28,9 +32,10 @@ def read_env_file(env_file: Path) -> dict[str, str]:
 
 
 class SecretRedactor:
-    """Replaces the given values (longest first, short ones ignored) and key formats."""
+    """Replaces the given values (longest first, short ones ignored), key formats and, with
+    `pii`, emails and phone numbers."""
 
-    def __init__(self, values: Iterable[str]) -> None:
+    def __init__(self, values: Iterable[str], pii: bool = False) -> None:
         literal = sorted(
             {value for value in values if len(value) >= MIN_VALUE_LENGTH},
             key=len,
@@ -38,7 +43,12 @@ class SecretRedactor:
         )
         parts = [re.escape(value) for value in literal] + _KEY_FORMATS
         self._pattern = re.compile("|".join(parts))
+        self._pii = _PII if pii else []
 
     def redact(self, text: str) -> tuple[str, int]:
         """Return the redacted text and the number of replacements."""
-        return self._pattern.subn(REDACTED, text)
+        text, count = self._pattern.subn(REDACTED, text)
+        for pattern, placeholder in self._pii:
+            text, found = pattern.subn(placeholder, text)
+            count += found
+        return text, count

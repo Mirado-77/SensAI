@@ -71,6 +71,14 @@ class PromptsConfig(_Section):
     persona: str = Field(default="", pattern=r"^([A-Za-z0-9_-]+)?$")
 
 
+class AgentsConfig(_Section):
+    """Multi-agent handoff (A2): `/pair` runs the `dev` persona then the `reviewer` persona."""
+
+    dev: str = Field(pattern=r"^[A-Za-z0-9_-]+$")
+    reviewer: str = Field(pattern=r"^[A-Za-z0-9_-]+$")
+    max_rounds: int = Field(ge=1, le=5)
+
+
 class MemoryConfig(_Section):
     """Project memory (M3): facts saved by the model, `recall` of them sent at each turn.
     Context budget (M2): old turns are summarized once the context reaches `compress_at` of
@@ -82,6 +90,14 @@ class MemoryConfig(_Section):
     compress: bool
     compress_at: float = Field(gt=0, le=1)
     keep_turns: int = Field(gt=0)
+
+
+class CacheConfig(_Section):
+    """Semantic cache (A6): answers served again for a question whose embedding is close enough."""
+
+    enabled: bool
+    min_score: float = Field(ge=0.0, le=1.0)
+    ttl_hours: float = Field(gt=0)
 
 
 class StorageConfig(_Section):
@@ -167,10 +183,11 @@ class RagConfig(_Section):
 
 
 class GuardsConfig(_Section):
-    """Input and output guards (EV2): injection check, secret redaction from `env_file`."""
+    """Input and output guards (EV2): injection check, redaction of `env_file` secrets and PII."""
 
     enabled: bool
     env_file: Path
+    pii: bool = True
 
 
 class SchedulerConfig(_Section):
@@ -189,6 +206,32 @@ class SchedulerConfig(_Section):
         return commands
 
 
+class ArtifactConfig(_Section):
+    """Artifact configuration"""
+
+    enabled: bool
+    sections: list[str]
+    max_section_chars: int = Field(default=5000, ge=2000, le=7000)
+
+
+
+class ExportConfig(_Section):
+    """Export and sharing (X3): where the shared pages are written and the address serving them."""
+
+    shares_dir: Path
+    host: str = "127.0.0.1"
+    port: int = Field(gt=0, le=65535)
+
+
+class ApiConfig(_Section):
+    """HTTP and WebSocket API (X1) used by the web UI and the other clients. `web_dir` is the built
+    web UI, served at / when it exists."""
+
+    host: str = "127.0.0.1"
+    port: int = Field(gt=0, le=65535)
+    web_dir: Path
+
+
 class Config(_Section):
     model: ModelConfig
     runtime: RuntimeConfig
@@ -197,6 +240,8 @@ class Config(_Section):
     questions: QuestionsConfig
     prompts: PromptsConfig
     memory: MemoryConfig
+    agents: AgentsConfig
+    cache: CacheConfig
     storage: StorageConfig
     policy: PolicyConfig
     files: FilesConfig
@@ -206,6 +251,9 @@ class Config(_Section):
     guards: GuardsConfig
     web: WebConfig
     scheduler: SchedulerConfig
+    artifact: ArtifactConfig
+    export: ExportConfig
+    api: ApiConfig
 
 
 def _read_toml(path: Path) -> dict[str, Any]:

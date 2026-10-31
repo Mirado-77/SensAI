@@ -13,8 +13,10 @@ from typing import Any
 from rich.console import Console
 from rich.text import Text
 
+from sensai.cli.api import run_api
 from sensai.cli.ask import run_ask
 from sensai.cli.chat import LAST_SESSION, _open_database, print_sessions, run_chat
+from sensai.cli.export import FORMATS, run_export, run_revoke, run_serve, run_share
 from sensai.cli.index import run_index
 from sensai.cli.prompts import print_prompt_diff, print_prompt_stats, print_prompt_versions
 from sensai.cli.schedule import run_schedule
@@ -75,13 +77,28 @@ def build_parser() -> argparse.ArgumentParser:
         "--errors", type=int, default=5, metavar="N", help="recent errors to show (default 5)"
     )
     stats.add_argument("--json", action="store_true", help="print the metrics as JSON")
+    export = commands.add_parser("export", help="export a session as JSON, Markdown or PDF (X3)")
+    _add_common_options(export)
+    export.add_argument("session", help="session id (a prefix is enough)")
+    export.add_argument("--format", choices=FORMATS, default="md", help="default: md")
+    export.add_argument("-o", "--output", type=Path, help="file to write (stdout if omitted)")
+    share = commands.add_parser("share", help="share a session with a no-auth link (X3)")
+    _add_common_options(share)
+    target = share.add_mutually_exclusive_group(required=True)
+    target.add_argument("session", nargs="?", help="session id to share (a prefix is enough)")
+    target.add_argument("--revoke", metavar="TOKEN", help="delete a share, its link stops working")
+    target.add_argument("--serve", action="store_true", help="serve the shares until Ctrl-C")
+    api = commands.add_parser("start:api", help="serve the API and the web UI until Ctrl-C (X1)")
+    _add_common_options(api)
     return parser
 
 
 def _add_common_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--model", help="Ollama model to use (overrides the configuration)")
     parser.add_argument("--config", type=Path, help="TOML file overriding configs/default.toml")
-    parser.add_argument("--temperature", type=float, help="model temperature (remplace configuration)")
+    parser.add_argument(
+        "--temperature", type=float, help="model temperature (overrides the configuration)"
+    )
 
 
 def config_from_args(args: argparse.Namespace) -> Config:
@@ -121,7 +138,21 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _prompts(args, config, terminal)
     if args.command == "stats":
         return _stats(args, config, terminal)
+    if args.command == "export":
+        return run_export(config, terminal, args.session, args.format, args.output)
+    if args.command == "share":
+        return _share(args, config, terminal)
+    if args.command == "start:api":
+        return run_api(config, terminal)
     return _run(run_chat(config, terminal, resume=args.resume), terminal)
+
+
+def _share(args: argparse.Namespace, config: Config, terminal: Terminal) -> int:
+    if args.serve:
+        return run_serve(config, terminal)
+    if args.revoke:
+        return run_revoke(config, terminal, args.revoke)
+    return run_share(config, terminal, args.session)
 
 
 def _stats(args: argparse.Namespace, config: Config, terminal: Terminal) -> int:

@@ -67,15 +67,18 @@ def test_initial_vocabulary_is_complete():
         "guard.blocked",
         "guard.redacted",
         "prompt.examples",
+        "agents.handoff",
+        "agents.verdict",
+        "cache.hit",
+        "cache.stored",
         "question.requested",
         "question.answered",
+        "artifact.patched",
         "memory.compressed",
         "memory.budget",
     }
 
-    assert RESERVED_EVENT_TYPES == {
-        "artifact.patched",
-    }
+    assert RESERVED_EVENT_TYPES == set()
     assert ALL_EVENT_TYPES == EVENT_TYPES | RESERVED_EVENT_TYPES
 
 

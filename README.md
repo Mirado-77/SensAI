@@ -9,6 +9,7 @@ Every call to the model goes through the Ollama HTTP API, with no LLM framework.
 - [Ollama](https://ollama.com), installed locally or started with `make ollama` (requires Docker)
 - At least one model pulled in Ollama, for example `ollama pull gemma4:e2b`
 - Optional: Docker, for the `run_command` tool (T2); build its image with `make sandbox-image`
+- Optional: WeasyPrint, for the PDF export (X3): `.venv/bin/pip install -e '.[pdf]'` (it needs Pango, present on most Linux desktops)
 
 ## Installation
 
@@ -47,7 +48,10 @@ sensai> Phil
 | `/fork <n>` | continue in a new session from message `n` of `/history`; the original session is kept |
 | `/profile` | show your profile; `/profile instructions <text>`, `/profile set <key> <value>`, `/profile unset <key>`, `/profile clear` edit it |
 | `/memory` | list the project memory (M3); `/memory forget <id>` deletes one record |
+| `/doc` | show the state document of the session (M4): goal, decisions, what is done, what is left |
+| `/cache clear` | empty the semantic cache of answers (A6) |
 | `/persona` | list the personas, `*` marks the active one; `/persona reviewer` switches for the next turns, in the same session (A5) |
+| `/pair <task>` | the `dev` persona does the task, the `reviewer` persona reviews it, and they hand it back and forth until it is approved (A2) |
 | `/exit`, `/quit`, `Ctrl-D` or `Ctrl-C` at the prompt | quit |
 
 The profile (custom instructions and preferences, e.g. `/profile set language Python`) is saved in
@@ -210,6 +214,27 @@ make eval-quality ARGS="--judge-model qwen3.5:9b"   # judge with another model
 make eval-quality ARGS="--only ev1-champs-task --no-index"
 ```
 
+### Developer and reviewer agents
+
+`/pair <task>` runs two agents on the same session, one after the other: the `dev` persona does
+the task (it may read, write and run), then the `reviewer` persona reviews the change with read
+access only. A structured call turns the review into a verdict (`approved`, `issues`); while the
+reviewer asks for changes, its issues go back to the developer, at most `[agents] max_rounds`
+times (2 by default). An unreadable verdict never counts as an approval. Every turn stays in the
+session, each handoff and verdict is journaled (`agents.handoff`, `agents.verdict`), and the
+persona you had is back afterwards.
+
+```text
+you> /pair dans taskman/stats.py, completion_rate plante sur une liste vide : renvoie 0.0
+pair> dev
+tool> edit_file(...)
+sensai> J'ai modifié completion_rate pour retourner 0.0 si la liste est vide.
+pair> reviewer
+tool> read_file({"path": "taskman/stats.py"})
+sensai> The change correctly handles the empty list by returning 0.0.
+pair> approuvé par reviewer (tour 1)
+```
+
 ### Project memory
 
 The model keeps a long-term memory of the project in the database, across sessions: conventions
@@ -231,6 +256,67 @@ Approval required (write): Ajouter à la mémoire du projet
 Allow? [y/N] y
 sensai> C'est noté.
 ```
+
+### Export and sharing: `sensai export`, `sensai share`
+
+A session can leave SENSAI in two ways: as a file, or as a link. Both contain the conversation
+(your messages and SENSAI's answers, without the raw tool outputs) and the state document (M4),
+and both go through the EV2 redactor first, so a secret read during the session is replaced.
+
+```bash
+sensai export 1e6f8e5e --format md -o session.md   # also json; stdout without -o
+sensai export 1e6f8e5e --format pdf -o session.pdf # needs WeasyPrint
+sensai share 1e6f8e5e                              # prints http://127.0.0.1:8765/s/<token>
+sensai share --serve                               # serves the shared pages until Ctrl-C
+sensai share --revoke <token>                      # deletes the page, the link stops working
+```
+
+A share is a snapshot: an HTML page saved in `[export] shares_dir` under a random token of about
+128 bits. Anyone who has the link can read it without an account, as with a "Share conversation"
+link; nobody can guess it. The server only answers `/s/<token>`, read-only. It listens on
+`127.0.0.1` by default; set `[export] host = "0.0.0.0"` to open the link from another device on
+the same network.
+### API: `sensai start:api`
+
+`sensai start:api` serves the API used by the web UI and by any other client (X1) until Ctrl-C.
+It builds the same runtime as `sensai chat` (tools, MCP servers, guards, cache), so a turn
+behaves the same in both. It listens on `[api] host` and `port` (`127.0.0.1:8000`, no auth).
+
+```bash
+sensai start:api                       # prints the addresses below
+curl http://127.0.0.1:8000/api/health  # {"name": "sensai"}
+```
+
+- REST under `/api`: `health`, `config` (model, prompt versions, personas), `sessions` (list,
+  create), `sessions/<id>/messages`, `sessions/<id>/fork` with `{"message_id": ...}`. The full
+  list is at `/docs`.
+- WebSocket `/ws/sessions/<id>`: one JSON object per frame. The server sends `ready`, `event`
+  (the same events as the CLI and the journal), `confirm` and `ask` (approval and question,
+  answered with the same `id`), `persona`, `idle` at the end of a turn, `warning` and `error`.
+  The client sends `message` `{text}`, `cancel`, `approval` `{id, allowed}`, `answer`
+  `{id, answer}` and `persona` `{name}`.
+- The built web UI (`[api] web_dir`, `web/dist`) is served at `/` once it exists.
+
+### Semantic cache
+
+The first message of a session is embedded with `[rag] embed_model`. When a question already
+answered for the same model, prompt version and persona is close enough (cosine at least
+`[cache] min_score`) and shares the same key terms (code identifiers and negation words), its answer is shown and saved without
+calling the model; the chat says so. Turns that ran a write or exec tool, or where a tool failed,
+are not cached, entries
+expire after `[cache] ttl_hours`, and `/cache clear` empties the cache.
+
+The default `min_score` (0.96) is high on purpose: with `nomic-embed-text` the same question about
+another function scores 0.85 and a negation added to a long question 0.99, hence the key terms
+too. The cache serves a question retyped, not a rephrasing ([user stories](docs/user-stories/A6.md)).
+
+```text
+you> que retourne completion_rate dans taskman/stats.py
+cache> déjà répondu à « Que retourne completion_rate dans taskman/stats.py ? » (similarité 1.00), /cache clear pour l'oublier
+sensai> Le `completion_rate` dans `taskman/stats.py` retourne la proportion de tâches terminées [...]
+```
+
+Measured with `gemma4:e2b`: 10.4 s for the first answer (one `read_file`), 0.55 s from the cache.
 
 ### Few-shot examples and prompt variants
 
@@ -342,6 +428,8 @@ name = "llama3.2:3b"
 | `[react]` | `enabled`, `max_plan_steps` | Bounded ReAct loop: a short structured plan before acting (1 to 10 steps); `enabled = false` turns it off |
 | `[mcp]` | `timeout_s`, `[[mcp.servers]]` | Maximum time of one MCP request; MCP servers: `name`, `command`, `args`, `env`, `cwd`, `enabled`, `risk` (`read`, `write`, `exec` or `auto`) |
 | `[storage]` | `db_path` | sqlite database holding sessions, messages and the event journal |
+| `[export]` | `shares_dir`, `host`, `port` | Shared pages of `sensai share` and the address `sensai share --serve` listens on (X3) |
+| `[api]` | `host`, `port`, `web_dir` | Address `sensai start:api` listens on, built web UI served at `/` (X1) |
 | `[policy]` | `read`, `write`, `exec` | Before a tool runs: `allow`, `ask` (user approval) or `deny` |
 | `[sandbox]` | `enabled`, `image`, `cpus`, `memory_mb`, `pids_limit`, `timeout_s`, `max_output_bytes` | `run_command` container: image, limits, maximum time of one command, output kept for the model |
 | `[rag]` | `enabled`, `embed_model`, `chunk_lines`, `overlap`, `top_k`, `candidates`, `min_score`, `max_chars`, `document_prefix`, `query_prefix` | Codebase search: Ollama embedding model, lines per chunk and lines shared by two chunks, excerpts returned by `search_code`, candidates kept before the relevance cut, minimum cosine similarity, character budget per result, task prefixes for nomic-embed-text (empty for other models) |
@@ -400,6 +488,8 @@ file, one migration per pull request. Migrations are applied when the database i
 - `src/sensai/evals/`: EV1 judge, EV4 attack corpus runner and reports.
 - `src/sensai/benchmarks/`: generic benchmark runner built on `evals/` (`benchmarks/*.toml`, reports in `docs/benchmarks/`).
 - `src/sensai/db/`: connection and migrations.
+- `src/sensai/assembly.py`: builds the runtime (tools, MCP servers, prompt, hooks), shared by the CLI and the API.
+- `src/sensai/api/`: FastAPI app (X1): REST routes, session WebSocket, event sink and approval channel of a client.
 - `src/sensai/cli/`: chat loop, console rendering, approval prompt.
 - `configs/`: TOML configuration (`default.toml`, profiles, personas, policies) and example JSON Schemas (`schemas/`).
 - `docker/ollama/`: Dockerfile and launch script for the Ollama server.
@@ -418,6 +508,7 @@ file, one migration per pull request. Migrations are applied when the database i
 | X2 | Interruption and fork: `Ctrl-C` stops the answer and keeps the partial text as interrupted, `/history` and `/fork <n>` branch the conversation into a new session | done ([user stories](docs/user-stories/X2.md)) |
 | X4 | Structured questions: when the request is ambiguous the model asks one short question with numbered options, the answer goes back to it and is saved | done ([user stories](docs/user-stories/X4.md)) |
 | X5 | Scheduled tasks: the chat plans a command from the allowed list at a fixed interval (approved once, at creation), `sensai schedule` runs them in the sandbox, `[scheduler]` config | done ([user stories](docs/user-stories/X5.md)) |
+| X3 | Export and sharing: `sensai export` writes a session and its state document as JSON, Markdown or PDF, `sensai share` saves it under a random token and `sensai share --serve` serves it without auth, secrets redacted, `--revoke` | done ([user stories](docs/user-stories/X3.md)) |
 | A1 | Bounded ReAct loop: short structured plan shown before acting, one event per action and observation, bounded by `max_steps` | done ([user stories](docs/user-stories/A1.md)) |
 | T5 | Structured output: JSON validated against a schema with one repair attempt (`sensai ask --schema`), tool arguments validated before any execution | done ([user stories](docs/user-stories/T5.md)) |
 | T4 | File access limited to allowed roots: `read_file`, `list_dir`, `write_file`, `edit_file`, path guard (traversal and symlinks), atomic writes, untrusted content marking | done ([user stories](docs/user-stories/T4.md)) |
@@ -429,10 +520,14 @@ file, one migration per pull request. Migrations are applied when the database i
 | A7 | Few-shot examples: the closest examples of `configs/prompts/examples/` sent before the conversation (`[prompts] examples`), EV1 reports record the variant and `make eval-compare` compares two of them question by question | done ([user stories](docs/user-stories/A7.md)) |
 | A5 | Personas in configuration: `dev` and `reviewer` files in `configs/personas/` (prompt and allowed tool risks), `/persona <name>` switches in the chat without losing the history, `--persona` and `[prompts] persona`, persona recorded on every run | done ([user stories](docs/user-stories/A5.md)) |
 | M3 | Project memory in SQLite: facts (convention, decision, fact, entity) and relations driven by the model through five CRUD tools, each change approved, the closest records recalled at every turn, `/memory` in the chat | done ([user stories](docs/user-stories/M3.md)) |
+| M4 | State document of the session: the model patches one section at a time with `artifact_patch` (`append` or `replace`, each change approved and journaled), the document is sent at every turn, `/doc` in the chat, copied on `/fork`, `[artifact]` config | done ([user stories](docs/user-stories/M4.md)) |
+| A6 | Semantic cache: the first message of a session answered from SQLite without the model when an earlier question is close enough (cosine `[cache] min_score`, same code identifiers and negations, same model, prompt and persona), write and exec turns not cached, `[cache] ttl_hours`, `/cache clear` | done ([user stories](docs/user-stories/A6.md)) |
+| A2 | Developer and reviewer agents: `/pair <task>` hands the work from the `dev` persona to the read-only `reviewer` persona and back until a structured verdict approves it (`[agents] max_rounds`), each handoff and verdict journaled | done ([user stories](docs/user-stories/A2.md)) |
 | EV3 | Metrics from the event journal: `sensai stats` shows runs by status, tokens, turn duration and time to first token (avg, p50, p95, max), per-tool calls, errors and refusals, guard counts and recent errors, `--since`, `--json` | done ([user stories](docs/user-stories/EV3.md)) |
 | EV4 | Attack corpus in `evals/attacks/`: file injection, tool injection, paths outside the roots, secret leak, dangerous command; `make eval` writes a JSON and a Markdown report in `evals/reports/` | done ([user stories](docs/user-stories/EV4.md)) |
-| EV2 | Guards: user messages and tool outputs refused when they try to override the instructions, `.env` values and common key formats redacted from tool outputs and answers, `[guards]` config | done ([user stories](docs/user-stories/EV2.md)) |
+| EV2 | Guards: user messages and tool outputs refused when they try to override the instructions, `.env` values and common key formats redacted from tool outputs and answers, emails and phone numbers masked as `[EMAIL]` and `[PHONE]` (`[guards] pii`), `[guards]` config | done ([user stories](docs/user-stories/EV2.md)) |
 | T3 | Web search through a local SearXNG (`make searxng`, no API key, no quota): `web_search` with `allowed_domains` / `blocked_domains`, results marked untrusted, `[web]` config | done ([user stories](docs/user-stories/T3.md)) |
+| X1 | Web UI: `sensai start:api` serves the REST routes and the session WebSocket (streamed events, approvals, questions, cancel, persona switch, fork) with the same runtime as the CLI | in progress: API done, web UI to come |
 
 Foundations already in place for the next features: the tool-call path of the agent loop
 (registry, approval by risk level, untrusted content marking), the event journal, and the
