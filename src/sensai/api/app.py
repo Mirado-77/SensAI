@@ -70,6 +70,7 @@ def create_app(config: Config, gateway: ModelGateway | None = None) -> FastAPI:
             "persona": config.prompts.persona,
             "personas": personas,
             "max_steps": config.runtime.max_steps,
+            "max_tokens": config.runtime.max_tokens,
         }
 
     @app.get("/api/sessions")

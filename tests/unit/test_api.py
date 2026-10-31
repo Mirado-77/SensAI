@@ -1,11 +1,17 @@
 import asyncio
+import io
 
+import httpx
 import pytest
+import respx
 from fastapi.testclient import TestClient
+from rich.console import Console
 from starlette.websockets import WebSocketDisconnect
 
 from sensai.api.app import SESSION_NOT_FOUND, create_app
+from sensai.cli.api import run_web
 from sensai.cli.main import build_parser
+from sensai.cli.terminal import Terminal
 from sensai.core.config import load_config
 from sensai.core.events import (
     APPROVAL_REQUESTED,
@@ -249,3 +255,30 @@ def test_the_built_web_ui_is_served_at_the_root(tmp_path):
 def test_start_api_is_a_command():
     args = build_parser().parse_args(["start:api", "--model", "m"])
     assert (args.command, args.model) == ("start:api", "m")
+
+
+def make_terminal():
+    out, err = io.StringIO(), io.StringIO()
+    console = Console(file=out, color_system=None, width=200)
+    return Terminal(console, Console(file=err, color_system=None, width=200)), out, err
+
+
+def test_start_web_needs_the_built_ui(tmp_path):
+    terminal, _, err = make_terminal()
+    opened = []
+    assert run_web(api_config(tmp_path), terminal, opened.append) == 2
+    assert "make web" in err.getvalue()
+    assert opened == []
+
+
+@respx.mock
+def test_start_web_only_opens_the_browser_when_the_api_runs(tmp_path):
+    (tmp_path / "dist").mkdir()
+    respx.get("http://127.0.0.1:8000/api/health").mock(
+        return_value=httpx.Response(200, json={"name": "sensai"})
+    )
+    terminal, out, _ = make_terminal()
+    opened = []
+    assert run_web(api_config(tmp_path), terminal, opened.append) == 0
+    assert opened == ["http://127.0.0.1:8000/"]
+    assert "already running" in out.getvalue()
