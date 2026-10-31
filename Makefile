@@ -6,7 +6,7 @@ DEMO := $(BIN)/sensai chat --config configs/demo.toml
 DEMO_ENV := PATH="$(abspath $(BIN)):$$PATH"
 
 .PHONY: install lint format test test-integration ollama chat eval eval-quality eval-compare bench \
-	demo demo-reset demo-rehearse
+	demo demo-reset demo-rehearse web web-dev web-test
 
 install:
 	python3 -m venv $(VENV)
@@ -34,6 +34,15 @@ searxng:
 
 chat:
 	$(BIN)/sensai chat $(ARGS)
+
+web:
+	cd web && npm ci && npm run build
+
+web-dev:
+	cd web && npm run dev
+
+web-test:
+	cd web && npm test && npm run typecheck && npm run lint
 
 sandbox-image:
 	docker build -t sensai-sandbox:latest sandbox/
