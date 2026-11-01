@@ -18,6 +18,8 @@ import select
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.request
 from datetime import datetime
 from pathlib import Path
 
@@ -36,30 +38,43 @@ SPINNER_KEEP_S = 3
 MAX_PAUSE_S = 2  # a silent wait (model loading, MCP server starting) is shortened too
 TURN_TIMEOUT_S = 3600
 INTERRUPT_AFTER_S = 25  # on a CPU, enough for a paragraph to appear before Ctrl-C
-LONG_REQUEST = "Écris une documentation détaillée de chaque fonction du projet, avec un exemple"
+LONG_REQUEST = "Sans appeler d'outil, écris une longue explication de ce qu'est un test unitaire"
+FIRST_QUESTION = (
+    "Je reprends ce projet que je ne connais pas. Explique-moi en quelques lignes ce qu'il"
+    " fait et comment il est organisé."
+)
+CACHED_QUESTION = "Que retourne completion_rate dans taskman/stats.py ?"
+RESUMED = re.compile(r"Resumed session ([0-9a-f]+)")
+SHARE_LINK = re.compile(r"http://\S+/s/(\S+)")
+API_HEALTH = "http://127.0.0.1:8000/api/health"
 
 # Each act is one `sensai chat` process; "/fork" without a number forks just before LONG_REQUEST.
 ACTS = [
     (
         [],
         [
-            "Je reprends ce projet que je ne connais pas. Explique-moi en quelques lignes ce qu'il"
-            " fait et comment il est organisé.",
+            FIRST_QUESTION,
             "Lis CONTRIBUTING.md et résume les règles à respecter pour contribuer.",
             "Lance les tests, trouve pourquoi un test échoue, corrige-le et relance les tests.",
             "/tools",
             "Avec l'outil code__python_symbols, liste les fonctions de taskman/stats.py.",
             "Avec l'outil fs__read_text_file du serveur MCP fs, lis tests/test_stats.py et"
             " compte les fonctions dont le nom commence par test_.",
-            LONG_REQUEST + " pour chacune.",
+            LONG_REQUEST + ", avec des exemples en Python.",
             "/history",
             "/fork",
-            "Résume plutôt en une phrase ce que fait chaque module.",
+            "Relis les fichiers de taskman/, puis résume en une phrase ce que fait chaque module.",
             "/persona reviewer",
             "Relis la correction que tu as faite dans taskman/stats.py : est-ce qu'il manque un"
             " test ou un cas limite ?",
             "/persona dev",
+            "Lis AUTHORS.md et donne-moi le contact du mainteneur.",
+            "/pair Dans tests/test_stats.py, ajoute un test de completion_rate avec une seule"
+            " tâche terminée. Ne lance pas les tests.",
             "Retiens comme convention du projet : les docstrings sont écrites en français.",
+            "Mets à jour le document d'état avec artifact_patch : ce qui a été corrigé et ce qui"
+            " reste à faire.",
+            "/doc",
             "/exit",
         ],
     ),
@@ -71,11 +86,11 @@ ACTS = [
             "/exit",
         ],
     ),
+    # A6: a question asked in a new session, then retyped in another one, served by the cache.
+    ([], [CACHED_QUESTION, "/exit"]),
+    ([], [CACHED_QUESTION, "/exit"]),
 ]
-COMMANDS = [
-    ["git", "-C", "demo-work", "diff", "--stat"],
-    [str(BIN / "sensai"), "stats", *CONFIG],
-]
+EXPORT = "demo-work/session.md"
 
 
 class Recorder:
@@ -184,11 +199,97 @@ def fork_number(screen: str) -> str:
     raise RuntimeError("the long request is not in /history")
 
 
+def shell(recorder: Recorder, *command: str) -> str:
+    """Run a command, show it and its output in the recording, return the output."""
+    log(f"$ {' '.join(command)}")
+    result = subprocess.run(command, cwd=ROOT, capture_output=True)
+    shown = [Path(command[0]).name, *command[1:]]
+    recorder.write(f"$ {' '.join(shown)}\r\n".encode())
+    recorder.write((result.stdout + result.stderr).replace(b"\n", b"\r\n"))
+    return result.stdout.decode(errors="replace")
+
+
+def http_status(url: str) -> int | None:
+    """The status of `url`, or None while nothing answers."""
+    try:
+        with urllib.request.urlopen(url, timeout=2) as response:
+            return response.status
+    except urllib.error.HTTPError as exc:
+        return exc.code
+    except OSError:
+        return None
+
+
+def wait_for_server(url: str, timeout_s: float = 60) -> None:
+    start = time.monotonic()
+    while http_status(url) is None and time.monotonic() - start < timeout_s:
+        time.sleep(0.5)
+
+
+def show_status(recorder: Recorder, url: str) -> None:
+    recorder.write(f"$ curl -s -o /dev/null -w '%{{http_code}}' {url}\r\n".encode())
+    recorder.write(f"{http_status(url)}\r\n".encode())
+
+
+def show_share(recorder: Recorder, session_id: str, sensai: str) -> None:
+    """X3: a no-auth link that works while served, and stops working once revoked."""
+    output = shell(recorder, sensai, "share", *CONFIG, session_id)
+    match = SHARE_LINK.search(output)
+    if match is None:
+        raise RuntimeError(f"no link in the output of sensai share: {output}")
+    url, token = match.group(0), match.group(1)
+    server = subprocess.Popen(
+        [sensai, "share", *CONFIG, "--serve"],
+        cwd=ROOT,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        wait_for_server(url)
+        show_status(recorder, url)
+        shell(recorder, sensai, "share", *CONFIG, "--revoke", token)
+        show_status(recorder, url)
+    finally:
+        server.terminate()
+        server.wait()
+
+
+def show_api(recorder: Recorder, sensai: str) -> None:
+    """X1: the API of the web UI, with the same runtime as the chat."""
+    server = subprocess.Popen(
+        [sensai, "start:api", *CONFIG],
+        cwd=ROOT,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        wait_for_server(API_HEALTH)
+        with urllib.request.urlopen(API_HEALTH, timeout=5) as response:
+            body = response.read().decode()
+        recorder.write(f"$ curl -s {API_HEALTH}\r\n{body}\r\n".encode())
+    finally:
+        server.terminate()
+        server.wait()
+
+
+def run_commands(recorder: Recorder, session_id: str) -> None:
+    sensai = str(BIN / "sensai")
+    shell(recorder, "git", "-C", "demo-work", "diff", "--stat")
+    shell(recorder, sensai, "stats", *CONFIG)
+    shell(recorder, sensai, "export", *CONFIG, session_id, "-o", EXPORT)
+    shell(recorder, "head", "-n", "30", EXPORT)
+    show_share(recorder, session_id, sensai)
+    show_api(recorder, sensai)
+
+
 def play(recorder: Recorder) -> None:
+    session_id = None
     for number, (args, lines) in enumerate(ACTS, 1):
         log(f"act {number}: sensai chat {' '.join(args)}")
         chat = Chat(args, recorder)
         screen = chat.wait_for_input()
+        resumed = RESUMED.search(chat.screen)
+        session_id = resumed.group(1) if resumed else session_id
         for line in lines:
             if screen is None:
                 raise RuntimeError(f"the chat exited before: {line}")
@@ -202,12 +303,9 @@ def play(recorder: Recorder) -> None:
             screen = chat.wait_for_input(interrupt)
             log(f"done in {time.monotonic() - started:.0f} s")
         chat.close()
-    for command in COMMANDS:
-        log(f"$ {' '.join(command)}")
-        result = subprocess.run(command, cwd=ROOT, capture_output=True)
-        shown = [Path(command[0]).name, *command[1:]]
-        recorder.write(f"$ {' '.join(shown)}\r\n".encode())
-        recorder.write((result.stdout + result.stderr).replace(b"\n", b"\r\n"))
+    if session_id is None:
+        raise RuntimeError("no resumed session to export")
+    run_commands(recorder, session_id)
 
 
 def main() -> int:
