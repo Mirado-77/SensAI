@@ -8,6 +8,11 @@ timeout_s = 900
 
 [runtime]
 timeout_s = 3600
+# Tokens add up over the calls of one turn: 8 tool calls with all the tools exceed the default.
+max_tokens = 100000
+# /pair: the developer writes, runs the tests and answers within one turn.
+max_steps = 16
+max_tool_calls = 16
 
 # Not in the scenario: their tools would only lengthen every prompt.
 [web]
